@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dosímetro v0.3 — arnés de diagnóstico</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font-family: system-ui, sans-serif; margin: 1rem; max-width: 60rem; background: Canvas; color: CanvasText; }
+      fieldset { margin-bottom: 1rem; }
+      button { margin: 0.25rem 0.25rem 0.25rem 0; }
+      pre { background: color-mix(in srgb, CanvasText 8%, Canvas); padding: 0.75rem; min-height: 18rem; white-space: pre-wrap; }
+      .error { color: #b00020; }
+      dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
+      dt { font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <h1>Dosímetro de Carga Vocal v0.3 — arnés de diagnóstico</h1>
+
+    <fieldset>
+      <legend>Dispositivo</legend>
+      <label for="device">Micrófono:</label>
+      <select id="device"><option value="">(predeterminado)</option></select>
+      <button id="init">Inicializar audio</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Estado</legend>
+      <dl>
+        <dt>Sample rate</dt><dd id="sample-rate">—</dd>
+        <dt>Trama</dt><dd id="frame-size">—</dd>
+        <dt>Procesado del navegador</dt><dd id="track-settings">—</dd>
+        <dt>Ruido calibrado</dt><dd id="noise-floor">sin calibrar</dd>
+        <dt>Enrolamiento</dt><dd id="enrolment">sin perfil</dd>
+        <dt>Modo</dt><dd id="mode">—</dd>
+      </dl>
+    </fieldset>
+
+    <fieldset>
+      <legend>Flujo</legend>
+      <button id="calibrate" disabled>Calibrar ambiente (5s)</button>
+      <button id="enroll" disabled>Enrolar voz (15s)</button>
+      <button id="start" disabled>Iniciar sesión</button>
+      <button id="stop" disabled>Detener</button>
+      <p id="message" role="status"></p>
+    </fieldset>
+
+    <h2>Monitor en tiempo real</h2>
+    <pre id="monitor" aria-live="off">Esperando audio…</pre>
+
+    <script type="module" src="../src/dev-harness.js"></script>
+  </body>
+</html>
