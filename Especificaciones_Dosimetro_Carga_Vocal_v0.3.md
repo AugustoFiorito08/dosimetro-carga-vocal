@@ -1,0 +1,489 @@
+# Dosímetro de Carga Vocal con Identificación del Hablante v0.3
+
+**Documento de especificaciones del sistema**  
+**Versión del sistema:** 0.3  
+**Versión del documento:** 1.0  
+**Fecha:** 2026-11-04  
+**Estado:** Prototipo experimental sujeto a identificación paramétrica y validación experimental
+
+## 1. Descripción general
+
+El Dosímetro de Carga Vocal con Identificación del Hablante v0.3 es una aplicación experimental para computadora que registra y procesa la señal obtenida mediante un micrófono externo próximo a la boca. Su finalidad es estimar la carga acumulada por el uso de la voz de una persona evaluada.
+
+No es un dosímetro de ruido ambiental. El nivel acústico se utiliza solamente como una de las variables necesarias para caracterizar la emisión vocal y controlar la calidad de la señal. El sistema no calcula exposición ocupacional a ruido ni sustituye a un sonómetro o dosímetro de ruido.
+
+El prototipo identifica fonación probablemente atribuible al hablante previamente enrolado, rechaza ruido y voces no coincidentes, estima la frecuencia fundamental, calcula un estado dinámico de carga reciente y actualiza simultáneamente cinco modelos matemáticos candidatos.
+
+## 2. Finalidad y aplicaciones previstas
+
+El sistema está diseñado para:
+
+- medir el tiempo de fonación atribuible al hablante evaluado;
+- medir el tiempo de no fonación;
+- calcular el porcentaje de fonación;
+- caracterizar episodios vocales y pausas;
+- estimar la frecuencia fundamental de la voz;
+- representar la acumulación y recuperación de la carga vocal reciente;
+- calcular y comparar cinco modelos de dosis vocal dinámica;
+- estudiar la influencia de la continuidad, fragmentación y pausas sobre la carga calculada;
+- generar datos para identificación paramétrica y validación experimental;
+- apoyar investigaciones sobre sobrecarga vocal ocupacional, especialmente en profesiones de alta demanda vocal.
+
+No está diseñado para:
+
+- medir dosis de ruido ocupacional;
+- diagnosticar disfonía, fatiga vocal o lesión de los pliegues vocales;
+- establecer incapacidad laboral;
+- determinar por sí solo un límite permisible;
+- reemplazar una evaluación otorrinolaringológica, fonoaudiológica, acústica o epidemiológica;
+- efectuar identificación biométrica forense.
+
+## 3. Arquitectura funcional
+
+La cadena de procesamiento es:
+
+```text
+Micrófono externo
+        |
+        v
+Adquisición de audio digital
+        |
+        v
+Control de calidad y estimación del ruido de fondo
+        |
+        v
+Detección de actividad vocal y periodicidad
+        |
+        v
+Estimación de F0 y características espectrales
+        |
+        v
+Comparación con el perfil del hablante enrolado
+        |
+        +--> Voz atribuida al hablante
+        +--> Voz no atribuida
+        +--> Ruido rechazado
+        +--> Silencio
+        +--> Señal incierta
+        |
+        v
+Actualización de H y de los cinco modelos de carga vocal
+        |
+        v
+Visualización, registro y exportación CSV
+```
+
+## 4. Hardware
+
+### 4.1 Equipo principal
+
+- Computadora personal con navegador compatible.
+- Micrófono externo de diadema o lavalier, preferentemente próximo a la boca.
+- Interfaz USB o interfaz de audio compatible, cuando corresponda.
+- Altavoces o auriculares no son necesarios para la medición.
+
+### 4.2 Configuración recomendada del micrófono
+
+- Posición fija y reproducible.
+- Distancia boca-micrófono documentada.
+- Cable asegurado para reducir artefactos de movimiento.
+- Control automático de ganancia desactivado, cuando el controlador lo permita.
+- Supresión de ruido y cancelación de eco desactivadas durante la adquisición científica, siempre que el navegador y el dispositivo lo permitan.
+- Calibración previa y posterior si se pretende expresar presión acústica en pascales o nivel de presión sonora en decibeles.
+
+### 4.3 Navegadores
+
+Se recomienda utilizar versiones actuales de Google Chrome o Microsoft Edge. El navegador debe permitir `getUserMedia` y selección del dispositivo de entrada.
+
+## 5. Adquisición de audio
+
+El sistema permite seleccionar explícitamente el micrófono externo de la PC. La aplicación solicita autorización para acceder al dispositivo y procesa la señal localmente.
+
+Variables primarias:
+
+- muestras de audio digital;
+- marca temporal;
+- energía eficaz de la trama;
+- relación señal-ruido estimada;
+- periodicidad;
+- frecuencia fundamental;
+- características espectrales;
+- score de semejanza con el hablante enrolado;
+- decisión de atribución;
+- motivo de rechazo.
+
+La amplitud digital no debe interpretarse automáticamente como presión acústica en Pa. Esa conversión exige calibración de la cadena completa.
+
+## 6. Enrolamiento e identificación del hablante
+
+### 6.1 Enrolamiento
+
+El hablante evaluado registra una muestra de voz de aproximadamente 10 a 20 segundos. La muestra debe contener habla clara, variación fonética suficiente y una relación señal-ruido adecuada.
+
+### 6.2 Perfil acústico
+
+La versión 0.3 utiliza:
+
+- 12 coeficientes de envolvente espectral;
+- banco de filtros Mel;
+- centroide espectral global;
+- hasta ocho prototipos fonéticos;
+- similitud coseno;
+- suavizado temporal de la decisión.
+
+### 6.3 Regla de aceptación
+
+La fonación se incorpora a la carga únicamente cuando se cumplen simultáneamente los criterios de voz, identidad y calidad:
+
+```text
+Phi_k = V_k * W_k * Q_k
+```
+
+Donde:
+
+- `V_k = 1`: se detecta una emisión vocal periódica;
+- `W_k = 1`: la emisión es compatible con el perfil enrolado;
+- `Q_k = 1`: la calidad de la señal es suficiente;
+- `Phi_k = 1`: fonación aceptada y atribuida al hablante.
+
+Si cualquiera de los tres factores es cero, la trama no incrementa la dosis vocal.
+
+### 6.4 Alcance
+
+El procedimiento es un clasificador experimental de hablante objetivo frente a no objetivo. No constituye identificación biométrica forense. Debe validarse con sensibilidad, especificidad, falsa aceptación y falso rechazo.
+
+## 7. Rechazo de ruido y señales no válidas
+
+Una señal no se considera voz únicamente porque supere un umbral de amplitud. El sistema combina criterios para rechazar:
+
+- señal inferior a la puerta adaptativa;
+- relación señal-ruido insuficiente;
+- ruido aperiódico o de banda ancha;
+- impulsos con factor de cresta elevado;
+- energía fuera de la banda vocal;
+- voz no coincidente con el perfil enrolado;
+- señal incierta.
+
+Las categorías se contabilizan por separado:
+
+1. Fonación atribuida.
+2. Voz no atribuida.
+3. Ruido rechazado.
+4. Silencio.
+5. Señal incierta.
+
+El ruido se usa para decidir la calidad de la señal, no para calcular una dosis de ruido.
+
+## 8. Variables de uso vocal
+
+El sistema calcula:
+
+- tiempo total de evaluación;
+- tiempo de fonación atribuida;
+- tiempo de no fonación;
+- porcentaje de fonación;
+- porcentaje de no fonación;
+- duración de episodios vocales;
+- duración de pausas;
+- número de episodios aceptados;
+- frecuencia fundamental por trama válida;
+- nivel relativo o presión calibrada;
+- estado dinámico de carga reciente;
+- dosis acumulada por cada modelo.
+
+El porcentaje de fonación se calcula como:
+
+```text
+Porcentaje_fonacion = 100 * T_fonacion / (T_fonacion + T_no_fonacion)
+```
+
+La definición de no fonación debe conservar la clasificación original para distinguir silencio, ruido, voz ajena y señal incierta.
+
+## 9. Estado dinámico de carga vocal
+
+El estado de carga reciente se actualiza mediante:
+
+```text
+H_k = H_(k-1) * exp(-beta * Delta_t) + Phi_k * Delta_t
+```
+
+Donde:
+
+- `H_k`: estado dinámico de carga reciente;
+- `beta`: constante de recuperación, en `s^-1`;
+- `Delta_t`: intervalo temporal, en segundos;
+- `Phi_k`: fonación aceptada, 0 o 1.
+
+Cuando existe fonación atribuida, `H` aumenta. Durante la no fonación, `H` decae exponencialmente. La constante de tiempo y la semivida son:
+
+```text
+tau = 1 / beta
+
+t_1/2 = ln(2) / beta
+```
+
+`beta` es un parámetro experimental y no debe interpretarse como constante fisiológica validada hasta completar la identificación paramétrica.
+
+## 10. Carga acústica normalizada
+
+La función inicial es:
+
+```text
+I_k = (P_k / P_0)^2
+```
+
+Donde:
+
+- `P_k`: presión acústica eficaz de la emisión vocal, o magnitud relativa si no existe calibración;
+- `P_0`: referencia del modelo;
+- `I_k`: carga acústica normalizada.
+
+Si no existe calibración, los resultados deben rotularse como relativos. La presión captada por el micrófono no equivale directamente a presión subglótica ni a presión de colisión de los pliegues vocales.
+
+## 11. Modelos matemáticos implementados
+
+Todos los modelos utilizan la misma señal, `F0_k`, `I_k`, `Phi_k`, `H_k` y `Delta_t`.
+
+### 11.1 Modelo sin memoria
+
+```text
+D_0,k = D_0,k-1 + F0_k * I_k * Phi_k * Delta_t
+```
+
+Función:
+
+```text
+f_0(H) = 1
+```
+
+Es el modelo nulo para evaluar si el término de memoria mejora el desempeño.
+
+### 11.2 Modelo lineal
+
+```text
+D_L,k = D_L,k-1 + F0_k * I_k * Phi_k * (1 + alpha_L * H_k) * Delta_t
+```
+
+Función:
+
+```text
+f_L(H) = 1 + alpha_L * H
+```
+
+### 11.3 Modelo potencial
+
+```text
+D_P,k = D_P,k-1 + F0_k * I_k * Phi_k * [1 + a * (H_k / H_ref)^p] * Delta_t
+```
+
+Función:
+
+```text
+f_P(H) = 1 + a * (H / H_ref)^p
+```
+
+### 11.4 Modelo exponencial principal
+
+```text
+D_E,k = D_E,k-1 + F0_k * I_k * Phi_k * exp(alpha_E * H_k) * Delta_t
+```
+
+Función:
+
+```text
+f_E(H) = exp(alpha_E * H)
+```
+
+Este es el modelo principal del desarrollo original. Se conserva como modelo candidato, sin asumir que la fisiología vocal sea necesariamente exponencial.
+
+### 11.5 Modelo saturante
+
+```text
+D_S,k = D_S,k-1 + F0_k * I_k * Phi_k * [1 + A * H_k / (K_H + H_k)] * Delta_t
+```
+
+Función:
+
+```text
+f_S(H) = 1 + A * H / (K_H + H)
+```
+
+Los parámetros `alpha_L`, `a`, `p`, `H_ref`, `alpha_E`, `A`, `K_H` y `beta` deben identificarse y validarse experimentalmente.
+
+## 12. Interfaz
+
+La pantalla funcional incluye:
+
+- selector de micrófono;
+- medición de ambiente;
+- calibración de nivel;
+- enrolamiento del hablante;
+- umbral de similitud;
+- iniciar, pausar, continuar y finalizar;
+- estado de atribución;
+- score de hablante;
+- relación señal-ruido;
+- frecuencia fundamental;
+- nivel relativo o calibrado;
+- tiempo de fonación;
+- tiempo de no fonación;
+- porcentaje de fonación;
+- voz no atribuida;
+- ruido descartado;
+- silencio;
+- estado `H`;
+- valores de los cinco modelos;
+- gráfico temporal;
+- zonas provisionales;
+- exportación CSV.
+
+Las zonas de carga son provisionales y no deben interpretarse como límites clínicos o legales.
+
+## 13. Exportación de datos
+
+La aplicación exporta un archivo CSV por trama. Debe incluir, como mínimo:
+
+- timestamp;
+- duración de trama;
+- `F0`;
+- nivel;
+- SNR;
+- periodicidad;
+- score del hablante;
+- decisión de voz;
+- decisión de identidad;
+- decisión de calidad;
+- `Phi_k`;
+- categoría final;
+- motivo de rechazo;
+- `H_k`;
+- dosis sin memoria;
+- dosis lineal;
+- dosis potencial;
+- dosis exponencial;
+- dosis saturante;
+- versión del algoritmo;
+- parámetros usados.
+
+La conservación de scores continuos permite recalcular decisiones con nuevos umbrales sin repetir la medición.
+
+## 14. Privacidad
+
+- El procesamiento se realiza localmente.
+- El audio no se conserva por defecto.
+- La plantilla del hablante puede mantenerse en memoria o guardarse localmente.
+- La plantilla debe considerarse un dato sensible.
+- Para investigación con personas se requiere consentimiento informado y revisión ética.
+- La base analítica debe utilizar identificadores codificados.
+
+## 15. Instalación y ejecución
+
+1. Descomprimir `dosimetro_carga_vocal_hablante_v0.3.zip`.
+2. Abrir una terminal dentro de la carpeta del proyecto.
+3. Ejecutar:
+
+```bash
+python3 -m http.server 8080
+```
+
+4. Abrir en Chrome o Edge:
+
+```text
+http://localhost:8080
+```
+
+El acceso a micrófono requiere un contexto seguro. `localhost` es admitido por los navegadores modernos para pruebas locales.
+
+## 16. Secuencia de uso
+
+1. Conectar el micrófono externo.
+2. Abrir la aplicación.
+3. Autorizar el acceso al micrófono.
+4. Seleccionar el dispositivo correcto.
+5. Medir al menos cinco segundos de ambiente silencioso.
+6. Calibrar la cadena si se utilizarán Pa o dB SPL.
+7. Mantener fija la posición del micrófono.
+8. Enrolar la voz durante 10 a 20 segundos.
+9. Revisar el score y el umbral de similitud.
+10. Iniciar la medición.
+11. Controlar SNR, atribución y calidad.
+12. Finalizar y exportar el CSV.
+
+## 17. Verificación de la versión 0.3
+
+La versión entregada superó:
+
+- 13 de 13 pruebas automatizadas;
+- verificación de las cinco ecuaciones;
+- pruebas de fonación y no fonación;
+- verificación del porcentaje de fonación;
+- rechazo sintético de ruido de banda ancha;
+- rechazo de silencio e impulsos;
+- construcción y comparación de perfiles;
+- validación sintáctica de módulos;
+- inicialización de interfaz;
+- respuesta HTTP local;
+- comprobación de integridad del archivo ZIP.
+
+SHA-256 del paquete entregado:
+
+```text
+c2f79233854439dcd14699bdaff14b05fa819f302df363f6a50fda0819370aa1
+```
+
+## 18. Protocolo mínimo de prueba funcional
+
+Realizar cinco condiciones con el mismo micrófono y posición:
+
+1. Silencio.
+2. Ruido ambiental sin voz.
+3. Voz del hablante enrolado.
+4. Voz de otra persona.
+5. Voz enrolada con ruido superpuesto.
+
+Resultados esperados:
+
+- silencio: no debe incrementar las dosis;
+- ruido: debe rechazarse sin incrementar las dosis;
+- voz enrolada: debe incrementar fonación, `H` y dosis;
+- voz ajena: debe clasificarse como no atribuida;
+- voz con ruido: debe aceptarse solo si la calidad y la atribución superan los criterios.
+
+## 19. Limitaciones
+
+- La identificación no elimina todos los falsos positivos.
+- Puede degradarse con voces similares, habla simultánea, música tonal, reverberación elevada, cambios de distancia, disfonía severa o micrófono desplazado.
+- El nivel no es metrológico sin calibración.
+- Los parámetros de los modelos no están clínicamente identificados.
+- Las dosis no equivalen automáticamente a daño, riesgo o probabilidad de enfermedad.
+- No existe todavía un límite permisible validado.
+- Las zonas visuales son experimentales.
+- La validación sintética no sustituye ensayos con personas ni validación externa.
+
+## 20. Validación requerida
+
+Antes de utilizar el sistema para decisiones médico-laborales se requiere:
+
+- validación de `F0` contra referencia;
+- sensibilidad y especificidad de fonación;
+- falsa aceptación y falso rechazo del hablante;
+- desempeño con distintos SNR;
+- pruebas con habla simultánea;
+- repetibilidad y deriva instrumental;
+- identificación de parámetros;
+- comparación de modelos por MAE, RMSE, AIC, BIC y validación agrupada por participante;
+- validación externa en docentes y otros usuarios no incluidos en el ajuste;
+- evaluación epidemiológica de la relación entre dosis y desenlaces vocales.
+
+## 21. Criterio metodológico
+
+El sistema debe describirse como un modelo dinámico candidato sujeto a identificación y validación experimental. Los cinco modelos se mantienen en paralelo para seleccionar el más simple que presente una mejora estable, reproducible y relevante fuera de muestra.
+
+La salida correcta es un índice experimental de carga vocal calculada. No debe denominarse daño tisular, diagnóstico, incapacidad ni límite permisible hasta contar con evidencia específica.
+
+## 22. Control de versiones
+
+| Versión | Fecha | Cambio |
+|---|---|---|
+| 0.3 | 2026-11-04 | Identificación experimental del hablante, rechazo de ruido y cálculo multimodelo |
+| Documento 1.0 | 2026-11-04 | Especificación integral del sistema v0.3 |
