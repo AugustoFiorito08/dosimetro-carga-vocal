@@ -223,12 +223,17 @@ function renderControls(session) {
 }
 
 function renderLive(session) {
-  const a = session?.latest?.analysis;
   const load = session?.load;
-  const category = a?.category ?? 'none';
+  const enrolling = session?.mode === MODES.ENROLLING;
+  // Outside enrolment, only frames of a measuring session are shown: the last
+  // enrolment frame (classified without a profile) must not linger as "voz no atribuida".
+  const a = enrolling || load ? session.latest?.analysis : undefined;
+  const validForProfile = enrolling && a?.V === 1 && a?.Q === 1;
+  const category = validForProfile ? 'fonacion_atribuida' : a?.category ?? 'none';
   setAttr(el['status-card'], 'data-category', category);
-  setText(el['kpi-category'], CATEGORY_LABELS[category] ?? '—');
-  setText(el['kpi-reason'], a?.rejectionReason ? REASON_LABELS[a.rejectionReason] ?? a.rejectionReason : ' ');
+  setText(el['kpi-category'], validForProfile ? 'Voz válida para el perfil' : CATEGORY_LABELS[category] ?? '—');
+  const reason = enrolling ? (validForProfile ? null : a?.rejectionReason === 'no_profile' ? null : a?.rejectionReason) : a?.rejectionReason;
+  setText(el['kpi-reason'], enrolling && !reason ? 'Enrolando…' : reason ? REASON_LABELS[reason] ?? reason : ' ');
   setText(el['kpi-f0'], fixed(a?.f0, 1));
   setText(el['kpi-snr'], fixed(a?.snrDb, 1));
   setText(el['kpi-score'], fixed(a?.speakerScore, 2));
