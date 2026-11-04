@@ -3,52 +3,143 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Dosímetro v0.3 — arnés de diagnóstico</title>
-    <style>
-      :root { color-scheme: light dark; }
-      body { font-family: system-ui, sans-serif; margin: 1rem; max-width: 60rem; background: Canvas; color: CanvasText; }
-      fieldset { margin-bottom: 1rem; }
-      button { margin: 0.25rem 0.25rem 0.25rem 0; }
-      pre { background: color-mix(in srgb, CanvasText 8%, Canvas); padding: 0.75rem; min-height: 18rem; white-space: pre-wrap; }
-      .error { color: #b00020; }
-      dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
-      dt { font-weight: 600; }
-    </style>
+    <meta name="color-scheme" content="dark" />
+    <title>Dosímetro de Carga Vocal v0.3</title>
+    <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <h1>Dosímetro de Carga Vocal v0.3 — arnés de diagnóstico</h1>
+    <header class="topbar">
+      <div class="brand">
+        <h1>Dosímetro de carga vocal</h1>
+        <span class="version">v0.3 · experimental</span>
+      </div>
+      <div class="session-state" aria-live="polite">
+        <span class="state-dot" id="mode-dot" aria-hidden="true"></span>
+        <span id="mode-label">Sin audio</span>
+        <span class="clock" id="session-clock">00:00:00</span>
+      </div>
+    </header>
 
-    <fieldset>
-      <legend>Dispositivo</legend>
-      <label for="device">Micrófono:</label>
-      <select id="device"><option value="">(predeterminado)</option></select>
-      <button id="init">Inicializar audio</button>
-    </fieldset>
+    <main class="layout">
+      <aside class="panel setup" aria-labelledby="setup-title">
+        <h2 id="setup-title">Preparación</h2>
 
-    <fieldset>
-      <legend>Estado</legend>
-      <dl>
-        <dt>Sample rate</dt><dd id="sample-rate">—</dd>
-        <dt>Trama</dt><dd id="frame-size">—</dd>
-        <dt>Procesado del navegador</dt><dd id="track-settings">—</dd>
-        <dt>Ruido calibrado</dt><dd id="noise-floor">sin calibrar</dd>
-        <dt>Enrolamiento</dt><dd id="enrolment">sin perfil</dd>
-        <dt>Modo</dt><dd id="mode">—</dd>
-      </dl>
-    </fieldset>
+        <div class="field">
+          <label for="device">Micrófono</label>
+          <div class="row">
+            <select id="device"><option value="">Predeterminado del sistema</option></select>
+            <button id="connect" type="button" class="btn">Conectar</button>
+          </div>
+          <p class="hint" id="device-info">Conectá el micrófono externo antes de empezar.</p>
+        </div>
 
-    <fieldset>
-      <legend>Flujo</legend>
-      <button id="calibrate" disabled>Calibrar ambiente (5s)</button>
-      <button id="enroll" disabled>Enrolar voz (15s)</button>
-      <button id="start" disabled>Iniciar sesión</button>
-      <button id="stop" disabled>Detener</button>
-      <p id="message" role="status"></p>
-    </fieldset>
+        <ol class="steps">
+          <li class="step" id="step-calibrate">
+            <div class="step-head">
+              <span class="step-title">Ambiente</span>
+              <span class="step-value" id="noise-floor">Sin medir</span>
+            </div>
+            <button id="calibrate" type="button" class="btn" disabled>Calibrar ambiente (5 s)</button>
+            <p class="hint">Silencio total durante la medición.</p>
+          </li>
+          <li class="step" id="step-enroll">
+            <div class="step-head">
+              <span class="step-title">Hablante</span>
+              <span class="step-value" id="enrolment">Sin perfil</span>
+            </div>
+            <button id="enroll" type="button" class="btn" disabled>Enrolar voz (15 s)</button>
+            <p class="hint">Habla clara y continua, con variedad de vocales.</p>
+          </li>
+          <li class="step">
+            <div class="step-head">
+              <label class="step-title" for="threshold">Umbral de similitud</label>
+              <output class="step-value" id="threshold-value" for="threshold">0.85</output>
+            </div>
+            <input id="threshold" type="range" min="0.50" max="0.99" step="0.01" value="0.85" />
+            <p class="hint">Se aplica al iniciar la sesión.</p>
+          </li>
+        </ol>
 
-    <h2>Monitor en tiempo real</h2>
-    <pre id="monitor" aria-live="off">Esperando audio…</pre>
+        <div class="progress" id="progress" hidden>
+          <div class="progress-label"><span id="progress-label"></span><span id="progress-value"></span></div>
+          <div class="progress-track"><div class="progress-bar" id="progress-bar"></div></div>
+        </div>
 
-    <script type="module" src="../src/dev-harness.js"></script>
+        <p class="message" id="message" role="status"></p>
+      </aside>
+
+      <section class="main-column">
+        <div class="panel controls" role="group" aria-label="Control de sesión">
+          <button id="start" type="button" class="btn primary" disabled>Iniciar</button>
+          <button id="pause" type="button" class="btn" disabled>Pausar</button>
+          <button id="resume" type="button" class="btn" disabled>Continuar</button>
+          <button id="finish" type="button" class="btn" disabled>Finalizar sesión</button>
+          <span class="spacer"></span>
+          <button id="export" type="button" class="btn" disabled>Exportar CSV</button>
+        </div>
+
+        <section class="kpis" aria-label="Indicadores en vivo">
+          <article class="kpi status-kpi" data-category="none" id="status-card">
+            <h3>Estado de fonación</h3>
+            <p class="status-line"><span class="status-dot" aria-hidden="true"></span><span id="kpi-category">—</span></p>
+            <p class="sub" id="kpi-reason">&nbsp;</p>
+          </article>
+          <article class="kpi"><h3>F0</h3><p class="value"><span id="kpi-f0">—</span><small>Hz</small></p></article>
+          <article class="kpi"><h3>SNR</h3><p class="value"><span id="kpi-snr">—</span><small>dB</small></p></article>
+          <article class="kpi"><h3>Score hablante</h3><p class="value"><span id="kpi-score">—</span></p></article>
+          <article class="kpi"><h3>Nivel</h3><p class="value"><span id="kpi-level">—</span><small id="kpi-level-unit">dBFS</small></p></article>
+          <article class="kpi"><h3>Tiempo total</h3><p class="value"><span id="kpi-total-time">—</span></p></article>
+          <article class="kpi"><h3>Fonación</h3><p class="value"><span id="kpi-phonation-pct">—</span><small>%</small></p></article>
+          <article class="kpi"><h3>Tiempo de fonación</h3><p class="value"><span id="kpi-phonation-time">—</span></p></article>
+          <article class="kpi"><h3>Tiempo sin fonación</h3><p class="value"><span id="kpi-nonphonation-time">—</span></p></article>
+          <article class="kpi"><h3>Episodios</h3><p class="value"><span id="kpi-episodes">—</span></p></article>
+          <article class="kpi"><h3>Pausa media</h3><p class="value"><span id="kpi-pause">—</span><small>s</small></p></article>
+        </section>
+
+        <section class="panel chart-panel" aria-labelledby="chart-title">
+          <div class="panel-head">
+            <h2 id="chart-title">Estado de carga reciente H<sub>k</sub></h2>
+            <p class="h-readout"><span id="kpi-h">—</span> s · zona <span id="kpi-zone">—</span></p>
+          </div>
+          <canvas id="load-chart" class="chart" role="img" aria-label="Evolución de H_k en los últimos dos minutos"></canvas>
+          <ul class="legend" aria-label="Categorías de trama">
+            <li data-category="fonacion_atribuida">Fonación atribuida <span id="t-fonacion_atribuida">0 s</span></li>
+            <li data-category="voz_no_atribuida">Voz no atribuida <span id="t-voz_no_atribuida">0 s</span></li>
+            <li data-category="ruido_descartado">Ruido descartado <span id="t-ruido_descartado">0 s</span></li>
+            <li data-category="silencio">Silencio <span id="t-silencio">0 s</span></li>
+            <li data-category="senal_incierta">Señal incierta <span id="t-senal_incierta">0 s</span></li>
+          </ul>
+          <p class="disclaimer">Zonas provisionales relativas a H<sub>∞</sub> = 1/β. No son límites clínicos ni legales.</p>
+        </section>
+
+        <section class="panel" aria-labelledby="doses-title">
+          <h2 id="doses-title">Dosis acumulada por modelo</h2>
+          <table class="doses">
+            <thead>
+              <tr><th scope="col">Modelo</th><th scope="col">Memoria f(H)</th><th scope="col" class="num">Dosis</th><th scope="col" class="num">Relación con D<sub>0</sub></th></tr>
+            </thead>
+            <tbody>
+              <tr data-model="none"><th scope="row">D<sub>0</sub> sin memoria</th><td>1</td><td class="num" data-dose></td><td class="num" data-ratio></td></tr>
+              <tr data-model="linear"><th scope="row">D<sub>L</sub> lineal</th><td>1 + α<sub>L</sub>·H</td><td class="num" data-dose></td><td class="num" data-ratio></td></tr>
+              <tr data-model="power"><th scope="row">D<sub>P</sub> potencial</th><td>1 + a·(H/H<sub>ref</sub>)<sup>p</sup></td><td class="num" data-dose></td><td class="num" data-ratio></td></tr>
+              <tr data-model="exponential"><th scope="row">D<sub>E</sub> exponencial</th><td>exp(α<sub>E</sub>·H)</td><td class="num" data-dose></td><td class="num" data-ratio></td></tr>
+              <tr data-model="saturating"><th scope="row">D<sub>S</sub> saturante</th><td>1 + A·H/(K<sub>H</sub> + H)</td><td class="num" data-dose></td><td class="num" data-ratio></td></tr>
+            </tbody>
+          </table>
+          <p class="hint" id="dose-units">Unidades relativas (sin calibración de presión).</p>
+        </section>
+
+        <footer class="diagnostics" aria-label="Diagnóstico de adquisición">
+          <span>Tramas <b id="d-received">0</b> recibidas · <b id="d-processed">0</b> procesadas</span>
+          <span>Caídas <b id="d-dropped">0</b></span>
+          <span>Discontinuidades <b id="d-discontinuities">0</b></span>
+          <span>Sobrecargas <b id="d-overruns">0</b></span>
+          <span>Proceso máx. <b id="d-max-ms">0</b> ms</span>
+          <span id="d-format"></span>
+        </footer>
+      </section>
+    </main>
+
+    <script type="module" src="../src/ui/dashboard.js"></script>
   </body>
 </html>

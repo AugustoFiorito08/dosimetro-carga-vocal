@@ -2,7 +2,8 @@
 // frame messages, so it runs identically behind the AudioWorklet port or in Node tests.
 import { classifyFrame, createFrameClassifier } from '../dsp/frame-classifier.js';
 import { calibrateNoiseFloor, frameRms } from '../dsp/signal-quality.js';
-import { enrollProfile } from '../dsp/speaker-profile.js';
+import { DEFAULT_IDENTITY_CONFIG, enrollProfile } from '../dsp/speaker-profile.js';
+import { ALGORITHM_VERSION, buildCsv, formatFrameRow, serializeCsvRow, serializeParameters } from '../export/csv-exporter.js';
 import { createVocalLoadState, stepVocalLoad } from '../vocal-load.js';
 
 export const MODES = Object.freeze({
@@ -10,7 +11,11 @@ export const MODES = Object.freeze({
   CALIBRATING: 'calibrating',
   ENROLLING: 'enrolling',
   MEASURING: 'measuring',
+  PAUSED: 'paused',
 });
+
+/** Gap between the accept and reject thresholds of the identity hysteresis. */
+const THRESHOLD_HYSTERESIS = DEFAULT_IDENTITY_CONFIG.acceptThreshold - DEFAULT_IDENTITY_CONFIG.rejectThreshold;
 
 export const DEFAULT_SESSION_CONFIG = Object.freeze({
   calibrationSeconds: 5, // spec §16: at least 5 s of quiet ambient
@@ -37,6 +42,10 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
   let classifier = null;
   let load = null;
   let latest = null;
+  let similarityThreshold = classifierConfig?.identity?.acceptThreshold ?? DEFAULT_IDENTITY_CONFIG.acceptThreshold;
+  let records = []; // serialised CSV lines of the current / last session (spec §13)
+  let sessionParams = null;
+  let firstSample = null;
   const stats = {
     framesReceived: 0,
     framesProcessed: 0,
@@ -114,28 +123,83 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     });
   }
 
+  /** Speaker similarity accept threshold (spec §12); applied at the next start(). */
+  function setSimilarityThreshold(value) {
+    if (!(value > 0 && value <= 1)) throw new RangeError(`similarity threshold must be in (0, 1], got ${value}`);
+    similarityThreshold = value;
+  }
+
   function start() {
     if (mode !== MODES.IDLE) throw new Error(`cannot start measuring while ${mode}`);
     if (profile === null) throw new Error('enrol the speaker before starting a session');
-    classifier = createFrameClassifier({ profile, config: classifierConfig, noiseFloorRms });
+    const identity = {
+      ...classifierConfig?.identity,
+      acceptThreshold: similarityThreshold,
+      rejectThreshold: Math.max(0, similarityThreshold - THRESHOLD_HYSTERESIS),
+    };
+    classifier = createFrameClassifier({ profile, config: { ...classifierConfig, identity }, noiseFloorRms });
     load = createVocalLoadState(loadOptions);
+    const { pitch, quality, identity: id, noisePeriodicityMax, minVocalBandRatio } = classifier.config;
+    sessionParams = {
+      algorithmVersion: ALGORITHM_VERSION,
+      parameters: serializeParameters({
+        sampleRate,
+        ...load.params,
+        units: load.units,
+        referencePressure: load.referencePressure,
+        noiseFloorRms,
+        prototypes: profile.prototypes.length,
+        acceptThreshold: id.acceptThreshold,
+        rejectThreshold: id.rejectThreshold,
+        smoothing: id.smoothing,
+        minF0: pitch.minF0,
+        maxF0: pitch.maxF0,
+        yinThreshold: pitch.threshold,
+        gateSnrDb: quality.gateSnrDb,
+        minSnrDb: quality.minSnrDb,
+        maxCrestFactor: quality.maxCrestFactor,
+        noisePeriodicityMax,
+        minVocalBandRatio,
+      }),
+    };
+    records = [];
+    firstSample = null;
     mode = MODES.MEASURING;
     return load;
   }
 
-  /** Stops measuring or cancels a running calibration / enrolment. */
+  function pause() {
+    if (mode !== MODES.MEASURING) throw new Error(`cannot pause while ${mode}`);
+    mode = MODES.PAUSED;
+  }
+
+  function resume() {
+    if (mode !== MODES.PAUSED) throw new Error(`cannot resume while ${mode}`);
+    mode = MODES.MEASURING;
+  }
+
+  /** Finishes measuring (records are kept for export) or cancels a calibration / enrolment. */
   function stop() {
     if (task) task.reject(new Error(`${mode} cancelled`));
     mode = MODES.IDLE;
     return load;
   }
 
-  function measure(samples) {
+  /** CSV of the current or last session; null when nothing was recorded. */
+  function exportCsv() {
+    return records.length === 0 ? null : buildCsv(records);
+  }
+
+  function measure(samples, startSample) {
     const result = classifyFrame(classifier, samples, sampleRate);
     classifier = result.state;
     load = stepVocalLoad(load, result.frame);
-    latest = { analysis: result.analysis, load };
-    emit({ type: 'frame', analysis: result.analysis, load });
+    // Audio-clock timestamp: paused intervals show up as gaps between rows.
+    if (firstSample === null && startSample !== undefined) firstSample = startSample;
+    const timestamp = firstSample === null ? result.analysis.timestamp : (startSample - firstSample) / sampleRate;
+    records.push(serializeCsvRow(formatFrameRow(result.analysis, load, { ...sessionParams, timestamp })));
+    latest = { analysis: result.analysis, load, timestamp };
+    emit({ type: 'frame', analysis: result.analysis, load, timestamp });
   }
 
   /** Entry point for worklet messages: { type: 'frame', samples, sequence, discontinuities }. */
@@ -147,11 +211,11 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     }
     stats.lastSequence = message.sequence;
     stats.discontinuities = message.discontinuities ?? stats.discontinuities;
-    if (mode === MODES.IDLE) return;
+    if (mode === MODES.IDLE || mode === MODES.PAUSED) return;
 
     const dt = message.samples.length / sampleRate;
     const t0 = now();
-    if (mode === MODES.MEASURING) measure(message.samples);
+    if (mode === MODES.MEASURING) measure(message.samples, message.startSample);
     else task.onFrame(message.samples, dt);
     const elapsedMs = now() - t0;
     stats.framesProcessed++;
@@ -164,7 +228,11 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     calibrate,
     enroll,
     start,
+    pause,
+    resume,
     stop,
+    exportCsv,
+    setSimilarityThreshold,
     subscribe(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);
@@ -175,6 +243,8 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     get load() { return load; },
     get latest() { return latest; },
     get stats() { return { ...stats }; },
+    get recordCount() { return records.length; },
+    get similarityThreshold() { return similarityThreshold; },
     sampleRate,
   };
 }
