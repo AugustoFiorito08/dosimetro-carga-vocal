@@ -34,6 +34,20 @@
         </div>
 
         <ol class="steps">
+          <li class="step" id="step-acoustic">
+            <div class="step-head">
+              <span class="step-title">Calibración acústica</span>
+              <span class="step-value" id="cal-status">Sin calibrar</span>
+            </div>
+            <div class="row">
+              <label class="visually-hidden" for="cal-ref">Nivel de referencia en dB SPL</label>
+              <input id="cal-ref" type="number" min="60" max="140" step="0.1" value="94" inputmode="decimal" />
+              <span class="unit">dB SPL</span>
+              <button id="cal-pre" type="button" class="btn" disabled>Calibrar con tono (5 s)</button>
+            </div>
+            <button id="cal-post" type="button" class="btn" disabled>Verificar tras la sesión (5 s)</button>
+            <p class="hint" id="cal-drift">Opcional. Sin calibración, la presión y las dosis quedan en unidades relativas.</p>
+          </li>
           <li class="step" id="step-calibrate">
             <div class="step-head">
               <span class="step-title">Ambiente</span>
