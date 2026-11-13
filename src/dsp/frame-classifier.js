@@ -120,6 +120,7 @@ export function classifyFrame(state, samples, sampleRate) {
     f0: pitch.f0,
     periodicity: pitch.periodicity,
     rms,
+    pressure: rms * config.pressureScale, // Pa when the session is calibrated, relative magnitude otherwise
     levelDb: toDb(rms),
     noiseFloorRms: state.noiseFloorRms,
     snrDb: snr,
@@ -157,7 +158,7 @@ export function toVocalLoadFrame(analysis, pressureScale = 1) {
     identityMatch: analysis.W === 1,
     qualityOk: analysis.Q === 1,
     f0: analysis.f0 ?? undefined,
-    pressure: analysis.rms * pressureScale,
+    pressure: analysis.pressure ?? analysis.rms * pressureScale,
     category: ENGINE_CATEGORY[analysis.category],
   };
 }
