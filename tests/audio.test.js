@@ -233,3 +233,31 @@ describe('audio manager (with injected browser fakes)', () => {
     await assert.rejects(manager.open(), /secure context/);
   });
 });
+
+describe('session controller with a DC offset on the input', () => {
+  it('calibrates on the noise, not the offset, and still detects voice', async () => {
+    const sr = 48000;
+    const n = frameSizeFor(sr);
+    const offset = (samples) => Float32Array.from(samples, (v) => v + 0.03);
+    const ambient = offset(whiteNoise(n, 0.0005, 3));
+    const voice = offset(harmonic(150, sr, n, 0.05));
+    const frames = (seconds) => Math.ceil((seconds * sr) / n);
+    let sequence = 0;
+    const send = (session, samples, count) => {
+      for (let i = 0; i < count; i++) session.handleMessage({ type: 'frame', samples, sequence: sequence++ });
+    };
+
+    const session = createSessionController({ sampleRate: sr });
+    const calibrated = session.calibrate();
+    send(session, ambient, frames(5));
+    const floor = await calibrated;
+    assert.ok(floor < 0.001, `floor=${floor} should ignore the 0.03 offset`);
+
+    const enrolled = session.enroll();
+    send(session, voice, frames(15));
+    await enrolled;
+    session.start();
+    send(session, voice, 10);
+    assert.equal(session.latest.analysis.category, 'fonacion_atribuida');
+  });
+});

@@ -1,6 +1,7 @@
 // Session flow (spec §16): calibrate -> enrol -> measure. Browser-free: it consumes
 // frame messages, so it runs identically behind the AudioWorklet port or in Node tests.
 import { classifyFrame, createFrameClassifier } from '../dsp/frame-classifier.js';
+import { createHighPassFilter } from '../dsp/high-pass.js';
 import { calibrateNoiseFloor, frameRms } from '../dsp/signal-quality.js';
 import { DEFAULT_IDENTITY_CONFIG, enrollProfile } from '../dsp/speaker-profile.js';
 import { ALGORITHM_VERSION, buildCsv, formatFrameRow, serializeCsvRow, serializeParameters } from '../export/csv-exporter.js';
@@ -34,6 +35,8 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
   if (!(sampleRate > 0)) throw new RangeError(`sampleRate must be > 0, got ${sampleRate}`);
   const cfg = { ...DEFAULT_SESSION_CONFIG, ...config };
   const listeners = new Set();
+  // Every frame goes through it (idle ones too) so the filter state stays continuous.
+  const highPass = createHighPassFilter(sampleRate);
 
   let mode = MODES.IDLE;
   let noiseFloorRms = null;
@@ -160,6 +163,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
         maxCrestFactor: quality.maxCrestFactor,
         noisePeriodicityMax,
         minVocalBandRatio,
+        highPassHz: highPass.cutoffHz,
       }),
     };
     records = [];
@@ -211,12 +215,13 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     }
     stats.lastSequence = message.sequence;
     stats.discontinuities = message.discontinuities ?? stats.discontinuities;
+    const samples = highPass.process(message.samples);
     if (mode === MODES.IDLE || mode === MODES.PAUSED) return;
 
-    const dt = message.samples.length / sampleRate;
+    const dt = samples.length / sampleRate;
     const t0 = now();
-    if (mode === MODES.MEASURING) measure(message.samples, message.startSample);
-    else task.onFrame(message.samples, dt);
+    if (mode === MODES.MEASURING) measure(samples, message.startSample);
+    else task.onFrame(samples, dt);
     const elapsedMs = now() - t0;
     stats.framesProcessed++;
     stats.maxProcessingMs = Math.max(stats.maxProcessingMs, elapsedMs);
