@@ -329,3 +329,89 @@ describe('engine purity and edge cases', () => {
     close(s.halfLife, Math.LN2 / 0.02);
   });
 });
+
+describe('parameter anchoring f(H*) = f* tied to beta', () => {
+  const DOSE_SHAPES = ['linear', 'power', 'exponential', 'saturating'];
+  const fAt = (params, h) => Object.fromEntries(DOSE_SHAPES.map((m) => [m, memoryFunctions[m](h, params)]));
+
+  it('defaults anchor every memory function at H* = tau with f* = 2', () => {
+    const p = resolveModelParams();
+    close(p.beta, 1 / 300);
+    close(p.hStar, 300);
+    assert.equal(p.fStar, 2);
+    for (const [model, value] of Object.entries(fAt(p, p.hStar))) close(value, 2, model);
+    for (const [model, value] of Object.entries(fAt(p, 0))) close(value, 1, model);
+  });
+
+  it('derives the shape parameters from H*, f*, p and K_H', () => {
+    const p = resolveModelParams({ beta: 0.01, fStar: 3, p: 1.5, kH: 50 });
+    close(p.hStar, 100);
+    close(p.alphaL, 2 / 100);
+    close(p.a, 2);
+    close(p.hRef, 100);
+    assert.equal(p.p, 1.5);
+    close(p.alphaE, Math.log(3) / 100);
+    close(p.A, (2 * (50 + 100)) / 100);
+    assert.equal(p.kH, 50);
+    for (const [model, value] of Object.entries(fAt(p, 100))) close(value, 3, model);
+  });
+
+  it('re-anchors when only beta is overridden', () => {
+    const p = resolveModelParams({ beta: 0.02 });
+    close(p.hStar, 50);
+    for (const [model, value] of Object.entries(fAt(p, 50))) close(value, 2, model);
+  });
+
+  it('honours an explicit H* and lets explicit shape parameters win', () => {
+    const p = resolveModelParams({ hStar: 20, alphaE: 0.5 });
+    close(p.hStar, 20);
+    close(memoryFunctions.linear(20, p), 2);
+    assert.equal(p.alphaE, 0.5);
+  });
+
+  it('falls back to H* = 300 s when beta = 0 and no H* is given', () => {
+    const p = resolveModelParams({ beta: 0 });
+    close(p.hStar, 300);
+    close(memoryFunctions.exponential(300, p), 2);
+  });
+
+  it('rejects f* < 1 and non-positive H*', () => {
+    assert.throws(() => resolveModelParams({ fStar: 0.5 }), RangeError);
+    assert.throws(() => resolveModelParams({ hStar: 0 }), RangeError);
+    assert.throws(() => resolveModelParams({ fStar: NaN }), RangeError);
+  });
+
+  it('stress test: continuous phonation keeps H <= tau + dt and every f(H) bounded by ~f*', () => {
+    const dt = 2048 / 48000;
+    const params = resolveModelParams();
+    const frames = Array.from({ length: Math.ceil((10 * 300) / dt) }, () => voice(dt));
+    const state = run(createVocalLoadState({ params }), frames);
+    assert.ok(state.h <= 300 + dt, `H = ${state.h}`);
+    for (const [model, value] of Object.entries(fAt(params, state.h))) {
+      assert.ok(Number.isFinite(value) && value <= 2 + 1e-3, `${model} f(H) = ${value}`);
+    }
+  });
+});
+
+describe('conventional doses (time and cycle)', () => {
+  it('start at zero', () => {
+    assert.deepEqual(createVocalLoadState().conventionalDoses, { time: 0, cycle: 0 });
+  });
+
+  it('D_t = sum(Phi * dt) and D_c = sum(Phi * F0 * dt), independent of pressure and memory', () => {
+    const frames = [voice(0.5, 200, 2), silence(1), voice(0.25, 120, 0), voice(1, 250, 0.1)];
+    const state = run(createVocalLoadState({ params: { beta: 0.5 } }), frames);
+    close(state.conventionalDoses.time, 1.75);
+    close(state.conventionalDoses.cycle, 0.5 * 200 + 0.25 * 120 + 1 * 250);
+    close(state.conventionalDoses.time, state.metrics.phonationTime);
+  });
+
+  it('rejected frames (Phi = 0) never increase them', () => {
+    const frames = [
+      { dt: 1, voiced: true, identityMatch: false, qualityOk: true, f0: 150, pressure: 1, category: 'unattributed_voice' },
+      { dt: 1, voiced: true, identityMatch: true, qualityOk: false, f0: 150, pressure: 1, category: 'noise' },
+      silence(2),
+    ];
+    assert.deepEqual(run(createVocalLoadState(), frames).conventionalDoses, { time: 0, cycle: 0 });
+  });
+});

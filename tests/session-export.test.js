@@ -59,7 +59,7 @@ describe('pause / resume / finish', () => {
 });
 
 describe('session CSV', () => {
-  it('exports one 21-column row per measured frame with audio-clock timestamps', async () => {
+  it('exports one full-width row per measured frame with audio-clock timestamps', async () => {
     const { session, send } = await readySession();
     session.start();
     send(voice, 2);
@@ -73,12 +73,13 @@ describe('session CSV', () => {
     assert.equal(lines[0], CSV_COLUMNS.join(','));
     assert.equal(lines.length, 4);
     const rows = lines.slice(1).map((l) => l.split(','));
-    assert.ok(rows.every((r) => r.length === 21), 'parameters column has no commas');
+    assert.ok(rows.every((r) => r.length === CSV_COLUMNS.length), 'parameters column has no commas');
     const dt = N / SR;
     assert.deepEqual(rows.map((r) => Number(r[0])), [0, dt, 5 * dt]);
     assert.deepEqual(rows.map((r) => r[11]), ['fonacion_atribuida', 'fonacion_atribuida', 'silencio']);
-    assert.equal(rows[0][19], '0.3');
-    assert.match(rows[0][20], /^sampleRate=16000;beta=.*acceptThreshold=0\.85;rejectThreshold=0\.75;/);
+    assert.equal(rows[0][19], '0.3.1');
+    assert.match(rows[0][20], /^sampleRate=16000;beta=.*hStar=300;fStar=2;.*acceptThreshold=0\.85;rejectThreshold=0\.75;/);
+    assert.deepEqual(rows.map((r) => Number(r[21])), [dt, 2 * dt, 2 * dt], 'time dose accumulates attributed frames only');
   });
 
   it('a new start clears the previous session records', async () => {

@@ -1,7 +1,7 @@
 # Dosímetro de Carga Vocal con Identificación del Hablante v0.3
 
 **Documento de especificaciones del sistema**  
-**Versión del sistema:** 0.3  
+**Versión del sistema:** 0.3.1  
 **Versión del documento:** 1.0  
 **Fecha:** 2026-11-04  
 **Estado:** Prototipo experimental sujeto a identificación paramétrica y validación experimental
@@ -224,6 +224,8 @@ t_1/2 = ln(2) / beta
 
 `beta` es un parámetro experimental y no debe interpretarse como constante fisiológica validada hasta completar la identificación paramétrica.
 
+Bajo fonación continua, `H` tiende a `Delta_t / (1 - exp(-beta * Delta_t))`, que es aproximadamente `tau = 1 / beta`. Por lo tanto, el dominio alcanzable de `H` está acotado por `beta` (300 s con `beta = 1/300 s^-1`), y los parámetros de las funciones de memoria deben fijarse en relación con ese dominio.
+
 ## 10. Carga acústica normalizada
 
 La función inicial es:
@@ -310,6 +312,45 @@ f_S(H) = 1 + A * H / (K_H + H)
 
 Los parámetros `alpha_L`, `a`, `p`, `H_ref`, `alpha_E`, `A`, `K_H` y `beta` deben identificarse y validarse experimentalmente.
 
+### 11.6 Anclaje común de los parámetros
+
+Para que los modelos sean comparables, todas las funciones de memoria se anclan en dos puntos:
+
+```text
+f(0) = 1
+f(H*) = f*
+```
+
+Con `H*` en segundos y `f* >= 1`, los parámetros de forma se derivan así:
+
+```text
+alpha_L = (f* - 1) / H*
+a       = f* - 1,   H_ref = H*,   p libre (por defecto 2)
+alpha_E = ln(f*) / H*
+A       = (f* - 1) * (K_H + H*) / H*,   K_H libre (por defecto H*)
+```
+
+Valores provisionales por defecto: `beta = 1/300 s^-1`, `H* = tau = 1 / beta = 300 s`, `f* = 2`. Como `H` no supera aproximadamente `tau` bajo fonación continua, `f*` es la máxima amplificación que puede alcanzar cualquier modelo candidato en el dominio alcanzable. Los modelos difieren solo en la curvatura entre `0` y `H*` (convexa, lineal o cóncava), que es justamente la hipótesis a contrastar.
+
+Reglas de configuración:
+
+- Si se modifica `beta` sin indicar `H*`, el anclaje se recalcula con `H* = 1 / beta`.
+- Si `beta = 0` (sin recuperación) y no se indica `H*`, se usa `H* = 300 s`.
+- Los parámetros de forma indicados explícitamente (`alpha_L`, `a`, `H_ref`, `alpha_E`, `A`) prevalecen sobre los derivados del anclaje.
+
+El anclaje es una convención de comparación, no un resultado fisiológico. `H*` y `f*` se registran en los parámetros exportados.
+
+### 11.7 Dosis convencionales
+
+Como referencia sin término de memoria, comparable con la literatura (Titze, Švec y Popolo, 2003), se calculan:
+
+```text
+D_t,k = D_t,k-1 + Phi_k * Delta_t            (dosis de tiempo, s)
+D_c,k = D_c,k-1 + Phi_k * F0_k * Delta_t     (dosis de ciclos, ciclos vibratorios)
+```
+
+No dependen de la presión ni de `H`. Permiten construir condiciones experimentales con dosis convencional equivalente y distinta distribución temporal de pausas. La dosis de distancia requiere un nivel de presión sonora calibrado y queda para la fase de calibración acústica.
+
 ## 12. Interfaz
 
 La pantalla funcional incluye:
@@ -363,7 +404,11 @@ La aplicación exporta un archivo CSV por trama. Debe incluir, como mínimo:
 - dosis exponencial;
 - dosis saturante;
 - versión del algoritmo;
-- parámetros usados.
+- parámetros usados;
+- dosis de tiempo (`d_t`);
+- dosis de ciclos (`d_c`).
+
+Las columnas nuevas se agregan al final para no alterar la posición de las existentes.
 
 La conservación de scores continuos permite recalcular decisiones con nuevos umbrales sin repetir la medición.
 
@@ -487,3 +532,4 @@ La salida correcta es un índice experimental de carga vocal calculada. No debe 
 |---|---|---|
 | 0.3 | 2026-11-04 | Identificación experimental del hablante, rechazo de ruido y cálculo multimodelo |
 | Documento 1.0 | 2026-11-04 | Especificación integral del sistema v0.3 |
+| 0.3.1 | 2026-11-13 | Anclaje común `f(H*) = f*` ligado a `beta` y dosis convencionales de tiempo y de ciclos |
