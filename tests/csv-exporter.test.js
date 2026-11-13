@@ -36,7 +36,11 @@ function parseCsv(text) {
 
 const column = (row, name) => row[CSV_COLUMNS.indexOf(name)];
 
-const load = { h: 1.25, doses: { none: 100, linear: 101.5, power: 102.25, exponential: 103.125, saturating: 104 } };
+const load = {
+  h: 1.25,
+  doses: { none: 100, linear: 101.5, power: 102.25, exponential: 103.125, saturating: 104 },
+  conventionalDoses: { time: 3.5, cycle: 612.75 },
+};
 const attributed = {
   timestamp: 12.288, dt: 0.064, f0: 151.234567891234, levelDb: -18.5, snrDb: 42.1, periodicity: 0.98,
   speakerScore: 0.93, V: 1, W: 1, Q: 1, phi: 1, category: 'fonacion_atribuida', rejectionReason: null,
@@ -53,9 +57,9 @@ describe('CSV header (spec §13)', () => {
     assert.equal(
       csvHeader(),
       'timestamp,frame_duration,f0,level,snr,periodicity,speaker_score,decision_v,decision_w,decision_q,' +
-        'phi_k,final_category,rejection_reason,h_k,d_0,d_l,d_p,d_e,d_s,algorithm_version,parameters',
+        'phi_k,final_category,rejection_reason,h_k,d_0,d_l,d_p,d_e,d_s,algorithm_version,parameters,d_t,d_c',
     );
-    assert.equal(CSV_COLUMNS.length, 21);
+    assert.equal(CSV_COLUMNS.length, 23);
     assert.ok(Object.isFrozen(CSV_COLUMNS));
   });
 });
@@ -71,6 +75,7 @@ describe('formatFrameRow', () => {
     assert.deepEqual(row.slice(14, 19), ['100', '101.5', '102.25', '103.125', '104']);
     assert.equal(column(row, 'algorithm_version'), ALGORITHM_VERSION);
     assert.equal(column(row, 'parameters'), 'beta=0.003333333333;alphaL=0.01;units=relative');
+    assert.deepEqual([column(row, 'd_t'), column(row, 'd_c')], ['3.5', '612.75']);
   });
 
   it('silence: empty F0 / score, decisions 0, reason below_gate', () => {
@@ -93,12 +98,13 @@ describe('formatFrameRow', () => {
     assert.equal(column(formatFrameRow(attributed, load, { timestamp: 99.5 }), 'timestamp'), '99.5');
   });
 
-  it('null / undefined / NaN / Infinity never break the 21-column structure', () => {
+  it('null / undefined / NaN / Infinity never break the column structure', () => {
     const broken = { dt: undefined, f0: NaN, levelDb: -Infinity, snrDb: Infinity, V: null, category: undefined };
     for (const row of [formatFrameRow(broken, null), formatFrameRow(undefined, undefined), formatFrameRow(null, { h: NaN })]) {
-      assert.equal(row.length, 21);
+      assert.equal(row.length, CSV_COLUMNS.length);
       assert.ok(row.every((c) => typeof c === 'string'));
       assert.ok(row.slice(0, 19).every((c) => c === ''), JSON.stringify(row));
+      assert.deepEqual([column(row, 'd_t'), column(row, 'd_c')], ['', '']);
     }
   });
 });
@@ -113,7 +119,7 @@ describe('CSV document', () => {
     assert.ok(csv.endsWith('\r\n'));
     const table = parseCsv(csv);
     assert.equal(table.length, 4);
-    assert.ok(table.every((r) => r.length === 21));
+    assert.ok(table.every((r) => r.length === CSV_COLUMNS.length));
     assert.deepEqual(table[0], CSV_COLUMNS);
     assert.deepEqual(table.slice(1).map((r) => column(r, 'final_category')), ['fonacion_atribuida', 'silencio', 'voz_no_atribuida']);
   });
@@ -129,7 +135,7 @@ describe('CSV document', () => {
     assert.equal(escapeCsvCell('x\ny'), '"x\ny"');
     assert.equal(escapeCsvCell('plain'), 'plain');
     const table = parseCsv(buildCsv([formatFrameRow(attributed, load, { parameters: 'note=a,"b"' })]));
-    assert.equal(table[1].length, 21);
+    assert.equal(table[1].length, CSV_COLUMNS.length);
     assert.equal(column(table[1], 'parameters'), 'note=a,"b"');
   });
 

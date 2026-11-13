@@ -1,8 +1,8 @@
 // Spec §13 — per-frame CSV export (RFC 4180: comma separator, dot decimal, CRLF).
 
-export const ALGORITHM_VERSION = '0.3';
+export const ALGORITHM_VERSION = '0.3.1';
 
-/** Mandatory columns of spec §13, in order. */
+/** Mandatory columns of spec §13, in order. New columns are appended so positional readers keep working. */
 export const CSV_COLUMNS = Object.freeze([
   'timestamp',
   'frame_duration',
@@ -25,6 +25,8 @@ export const CSV_COLUMNS = Object.freeze([
   'd_s',
   'algorithm_version',
   'parameters',
+  'd_t',
+  'd_c',
 ]);
 
 const LINE_BREAK = '\r\n';
@@ -63,15 +65,16 @@ export function serializeParameters(parameters = {}) {
 }
 
 /**
- * Formats one frame as the 21 cells of CSV_COLUMNS.
+ * Formats one frame as the cells of CSV_COLUMNS.
  * @param {object} analysis classifyFrame() analysis record
- * @param {{ h?: number, doses?: object } | null} state vocal-load state after the frame
+ * @param {{ h?: number, doses?: object, conventionalDoses?: object } | null} state vocal-load state after the frame
  * @param {{ algorithmVersion?: string, parameters?: string | object, timestamp?: number }} [sessionParams]
  * @returns {string[]}
  */
 export function formatFrameRow(analysis = {}, state = null, sessionParams = {}) {
   const a = analysis ?? {};
   const doses = state?.doses ?? {};
+  const conventional = state?.conventionalDoses ?? {};
   const parameters =
     typeof sessionParams.parameters === 'string' ? sessionParams.parameters : serializeParameters(sessionParams.parameters);
   return [
@@ -96,6 +99,8 @@ export function formatFrameRow(analysis = {}, state = null, sessionParams = {}) 
     doses.saturating,
     sessionParams.algorithmVersion ?? ALGORITHM_VERSION,
     parameters,
+    conventional.time,
+    conventional.cycle,
   ].map(formatCell);
 }
 

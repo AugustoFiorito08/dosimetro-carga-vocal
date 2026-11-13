@@ -1,6 +1,7 @@
 // Vocal-load engine: pure, DOM- and Web Audio-independent.
 // Combines spec §6.3 (acceptance), §8 (metrics), §9 (H_k), §10 (I_k), §11 (doses).
 import { acceptedPhonation } from './math/acceptance.js';
+import { conventionalDoseIncrements, createConventionalDoses } from './math/conventional-doses.js';
 import { acousticLoadUnits, normalizedAcousticLoad } from './math/acoustic-load.js';
 import { DOSE_MODELS, doseIncrements, resolveModelParams } from './math/dose-models.js';
 import { halfLife, timeConstant, updateLoadState } from './math/load-state.js';
@@ -9,6 +10,7 @@ import { assertFiniteNonNegative, assertFinitePositive } from './math/validation
 
 export * from './math/acceptance.js';
 export * from './math/acoustic-load.js';
+export * from './math/conventional-doses.js';
 export * from './math/dose-models.js';
 export * from './math/load-state.js';
 export * from './math/usage-metrics.js';
@@ -31,6 +33,7 @@ export function createVocalLoadState({ params, referencePressure = 1, calibrated
     frameIndex: 0,
     h: 0,
     doses: Object.fromEntries(DOSE_MODELS.map((m) => [m, 0])),
+    conventionalDoses: createConventionalDoses(),
     metrics: createUsageMetrics(),
   };
 }
@@ -55,11 +58,17 @@ export function stepVocalLoad(state, frame) {
   const intensity = phi === 1 ? normalizedAcousticLoad(frame.pressure, state.referencePressure) : 0;
   const increments = doseIncrements({ f0: frame.f0, intensity, phi, h, dt }, state.params);
   const doses = Object.fromEntries(DOSE_MODELS.map((m) => [m, state.doses[m] + increments[m]]));
+  const conventional = conventionalDoseIncrements({ f0: frame.f0, phi, dt });
+  const conventionalDoses = {
+    time: state.conventionalDoses.time + conventional.time,
+    cycle: state.conventionalDoses.cycle + conventional.cycle,
+  };
   return {
     ...state,
     frameIndex: state.frameIndex + 1,
     h,
     doses,
+    conventionalDoses,
     metrics: updateUsageMetrics(state.metrics, { phi, dt, category: frame.category }),
     lastFrame: { phi, intensity, increments },
   };
