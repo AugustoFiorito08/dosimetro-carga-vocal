@@ -11,6 +11,11 @@ const shift = (samples, offset) => Float32Array.from(samples, (v) => v + offset)
 const tail = (samples) => samples.subarray(samples.length >> 1);
 
 describe('high-pass filter (DC / rumble removal)', () => {
+  it('exposes its cutoff (50 Hz by default)', () => {
+    assert.equal(createHighPassFilter(SR).cutoffHz, 50);
+    assert.equal(createHighPassFilter(SR, 80).cutoffHz, 80);
+  });
+
   it('removes a DC offset', () => {
     const filter = createHighPassFilter(SR);
     const input = new Float32Array(N).fill(0.03);

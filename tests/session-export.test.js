@@ -77,8 +77,9 @@ describe('session CSV', () => {
     const dt = N / SR;
     assert.deepEqual(rows.map((r) => Number(r[0])), [0, dt, 5 * dt]);
     assert.deepEqual(rows.map((r) => r[11]), ['fonacion_atribuida', 'fonacion_atribuida', 'silencio']);
-    assert.equal(rows[0][19], '0.3.1');
+    assert.equal(rows[0][19], '0.3.2');
     assert.match(rows[0][20], /^sampleRate=16000;beta=.*hStar=300;fStar=2;.*acceptThreshold=0\.85;rejectThreshold=0\.75;/);
+    assert.match(rows[0][20], /;highPassHz=50$/);
     assert.deepEqual(rows.map((r) => Number(r[21])), [dt, 2 * dt, 2 * dt], 'time dose accumulates attributed frames only');
   });
 

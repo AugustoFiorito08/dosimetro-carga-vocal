@@ -1,7 +1,7 @@
 # Dosímetro de Carga Vocal con Identificación del Hablante v0.3
 
 **Documento de especificaciones del sistema**  
-**Versión del sistema:** 0.3.1  
+**Versión del sistema:** 0.3.2  
 **Versión del documento:** 1.0  
 **Fecha:** 2026-11-04  
 **Estado:** Prototipo experimental sujeto a identificación paramétrica y validación experimental
@@ -113,6 +113,8 @@ Variables primarias:
 - motivo de rechazo.
 
 La amplitud digital no debe interpretarse automáticamente como presión acústica en Pa. Esa conversión exige calibración de la cadena completa.
+
+Antes de cualquier análisis (medición de ambiente, enrolamiento y medición), cada trama pasa por un filtro pasa-altos Butterworth de 2.º orden con corte en 50 Hz. El filtro elimina el offset DC y el ruido de baja frecuencia que agregan muchos micrófonos y conversores, y que de otro modo inflarían la energía eficaz, el piso de ruido y la SNR, y desplazarían energía fuera de la banda vocal. El corte queda por debajo del límite inferior de F0 (70 Hz), con una pérdida aproximada de 1 dB a 70 Hz. El filtro procesa todas las tramas, también en reposo y en pausa, para que su estado sea continuo. La frecuencia de corte se registra en los parámetros exportados (`highPassHz`).
 
 ## 6. Enrolamiento e identificación del hablante
 
@@ -533,3 +535,4 @@ La salida correcta es un índice experimental de carga vocal calculada. No debe 
 | 0.3 | 2026-11-04 | Identificación experimental del hablante, rechazo de ruido y cálculo multimodelo |
 | Documento 1.0 | 2026-11-04 | Especificación integral del sistema v0.3 |
 | 0.3.1 | 2026-11-13 | Anclaje común `f(H*) = f*` ligado a `beta` y dosis convencionales de tiempo y de ciclos |
+| 0.3.2 | 2026-11-13 | Filtro pasa-altos de 50 Hz en la entrada; corte registrado en los parámetros exportados |

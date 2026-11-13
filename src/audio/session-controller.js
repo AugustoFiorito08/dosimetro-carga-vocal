@@ -163,6 +163,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
         maxCrestFactor: quality.maxCrestFactor,
         noisePeriodicityMax,
         minVocalBandRatio,
+        highPassHz: highPass.cutoffHz,
       }),
     };
     records = [];

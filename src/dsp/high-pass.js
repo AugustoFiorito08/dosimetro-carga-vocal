@@ -32,6 +32,7 @@ export function createHighPassFilter(sampleRate, cutoffHz = DEFAULT_HIGH_PASS_HZ
   let primed = false;
 
   return {
+    cutoffHz,
     /** @param {Float32Array} samples @returns {Float32Array} new filtered array (input untouched) */
     process(samples) {
       if (!primed && samples.length > 0) {
