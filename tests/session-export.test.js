@@ -64,7 +64,7 @@ describe('session CSV', () => {
     session.start();
     send(voice, 2);
     session.pause();
-    send(voice, 3); // 3 frames of paused audio -> gap in timestamps
+    send(ambient, 3); // 3 frames of paused audio -> gap in timestamps (also lets the high-pass settle)
     session.resume();
     send(ambient, 1);
     session.stop();
