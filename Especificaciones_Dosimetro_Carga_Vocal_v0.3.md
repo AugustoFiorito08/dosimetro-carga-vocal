@@ -1,7 +1,7 @@
 # Dosímetro de Carga Vocal con Identificación del Hablante v0.3
 
 **Documento de especificaciones del sistema**  
-**Versión del sistema:** 0.3.2  
+**Versión del sistema:** 0.4.0  
 **Versión del documento:** 1.0  
 **Fecha:** 2026-11-04  
 **Estado:** Prototipo experimental sujeto a identificación paramétrica y validación experimental
@@ -112,9 +112,43 @@ Variables primarias:
 - decisión de atribución;
 - motivo de rechazo.
 
-La amplitud digital no debe interpretarse automáticamente como presión acústica en Pa. Esa conversión exige calibración de la cadena completa.
+La amplitud digital no debe interpretarse automáticamente como presión acústica en Pa. Esa conversión exige calibración de la cadena completa (§5.1).
 
 Antes de cualquier análisis (medición de ambiente, enrolamiento y medición), cada trama pasa por un filtro pasa-altos Butterworth de 2.º orden con corte en 50 Hz. El filtro elimina el offset DC y el ruido de baja frecuencia que agregan muchos micrófonos y conversores, y que de otro modo inflarían la energía eficaz, el piso de ruido y la SNR, y desplazarían energía fuera de la banda vocal. El corte queda por debajo del límite inferior de F0 (70 Hz), con una pérdida aproximada de 1 dB a 70 Hz. El filtro procesa todas las tramas, también en reposo y en pausa, para que su estado sea continuo. La frecuencia de corte se registra en los parámetros exportados (`highPassHz`).
+
+### 5.1 Calibración acústica
+
+La presión eficaz se obtiene de la amplitud digital mediante:
+
+```text
+P_RMS = C_mic * A_digital
+
+C_mic = P_ref / A_digital,ref
+P_ref = 20 µPa * 10^(L_ref / 20)
+```
+
+Donde `L_ref` es el nivel conocido de un tono de referencia en dB SPL: un calibrador acústico (habitualmente 94 o 114 dB SPL a 1 kHz) o un tono estable medido con un sonómetro en la posición del micrófono. `A_digital,ref` es la media energética del RMS de las tramas del tono durante 5 s. Todas las tramas pasan antes por el filtro pasa-altos, igual que durante la medición.
+
+La captura se rechaza si:
+
+- dura menos de 3 s;
+- alguna muestra satura (pico ≥ 0,999);
+- no hay señal;
+- la desviación estándar del nivel de las tramas supera 0,5 dB (tono inestable).
+
+Secuencia:
+
+- **Calibración previa:** fija `C_mic` para la próxima sesión. Sin ella, la sesión queda en unidades relativas.
+- **Verificación posterior:** repite la captura al terminar la sesión y calcula la deriva respecto de la calibración que usó la sesión:
+
+```text
+delta_C = 100 * (C_post - C_pre) / C_pre        (%)
+delta_C_dB = 20 * log10(C_post / C_pre)         (dB)
+```
+
+La sesión se marca fuera de tolerancia cuando `|delta_C_dB|` supera 0,5 dB. Los límites de 0,5 dB (estabilidad y deriva) son provisionales y deben preregistrarse tras la validación de banco.
+
+La calibración corrige la ganancia de toda la cadena (micrófono, interfaz y navegador) solo para la posición, la ganancia y el dispositivo con que se realizó. Cualquier cambio de ganancia o de dispositivo exige recalibrar.
 
 ## 6. Enrolamiento e identificación del hablante
 
@@ -241,6 +275,8 @@ Donde:
 - `P_k`: presión acústica eficaz de la emisión vocal, o magnitud relativa si no existe calibración;
 - `P_0`: referencia del modelo;
 - `I_k`: carga acústica normalizada.
+
+Con calibración acústica (§5.1), `P_k` está en Pa y `P_0 = 1 Pa` (94 dB SPL) por defecto, configurable. `P_0` es una convención de normalización del modelo, no un valor fisiológico, y se registra en los parámetros exportados (`referencePressure`).
 
 Si no existe calibración, los resultados deben rotularse como relativos. La presión captada por el micrófono no equivale directamente a presión subglótica ni a presión de colisión de los pliegues vocales.
 
@@ -408,7 +444,10 @@ La aplicación exporta un archivo CSV por trama. Debe incluir, como mínimo:
 - versión del algoritmo;
 - parámetros usados;
 - dosis de tiempo (`d_t`);
-- dosis de ciclos (`d_c`).
+- dosis de ciclos (`d_c`);
+- presión eficaz en Pa (`pressure_pa`) y nivel en dB SPL (`spl_db`), vacíos si la sesión no está calibrada.
+
+Con calibración, los parámetros incluyen `calRefDbSpl` y `calCoefficient`. Tras la verificación posterior se agregan `calPostCoefficient`, `calDriftPct`, `calDriftDb` y `calWithinTolerance`; al exportar, estos valores se escriben en todas las filas de la sesión.
 
 Las columnas nuevas se agregan al final para no alterar la posición de las existentes.
 
@@ -448,13 +487,15 @@ El acceso a micrófono requiere un contexto seguro. `localhost` es admitido por 
 3. Autorizar el acceso al micrófono.
 4. Seleccionar el dispositivo correcto.
 5. Medir al menos cinco segundos de ambiente silencioso.
-6. Calibrar la cadena si se utilizarán Pa o dB SPL.
+6. Calibrar la cadena con el tono de referencia si se utilizarán Pa o dB SPL (§5.1).
 7. Mantener fija la posición del micrófono.
 8. Enrolar la voz durante 10 a 20 segundos.
 9. Revisar el score y el umbral de similitud.
 10. Iniciar la medición.
 11. Controlar SNR, atribución y calidad.
-12. Finalizar y exportar el CSV.
+12. Finalizar la sesión.
+13. Si la sesión fue calibrada, verificar la calibración con el mismo tono de referencia, sin cambiar la ganancia ni la posición.
+14. Exportar el CSV.
 
 ## 17. Verificación de la versión 0.3
 
@@ -536,3 +577,4 @@ La salida correcta es un índice experimental de carga vocal calculada. No debe 
 | Documento 1.0 | 2026-11-04 | Especificación integral del sistema v0.3 |
 | 0.3.1 | 2026-11-13 | Anclaje común `f(H*) = f*` ligado a `beta` y dosis convencionales de tiempo y de ciclos |
 | 0.3.2 | 2026-11-13 | Filtro pasa-altos de 50 Hz en la entrada; corte registrado en los parámetros exportados |
+| 0.4.0 | 2026-11-13 | Calibración acústica con tono de referencia, deriva pre/post, presión en Pa y nivel en dB SPL en el CSV, `P_0 = 1 Pa` con calibración |
