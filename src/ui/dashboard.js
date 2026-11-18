@@ -52,7 +52,7 @@ const $ = (id) => document.getElementById(id);
 const el = Object.fromEntries(
   [
     'device', 'connect', 'device-info', 'cal-ref', 'cal-pre', 'cal-post', 'cal-status', 'cal-drift', 'step-acoustic',
-    'dd-profile', 'dd-method', 'dd-value', 'dd-unit', 'dd-status', 'step-distance', 'kpi-distance',
+    'dd-profile', 'dd-method', 'dd-value', 'dd-unit', 'dd-status', 'step-distance', 'kpi-distance', 'kpi-distance-note',
     'calibrate', 'enroll', 'threshold', 'threshold-value',
     'noise-floor', 'enrolment', 'step-calibrate', 'step-enroll', 'progress', 'progress-label',
     'progress-value', 'progress-bar', 'message', 'start', 'pause', 'resume', 'finish', 'export',
@@ -190,6 +190,14 @@ el.enroll.addEventListener('click', () =>
   runTask('Enrolamiento', () => manager.session.enroll(), (p) => `Perfil creado con ${p.prototypes.length} prototipos. Ya podés iniciar.`),
 );
 
+/** Why D_d is (not) shown, so an empty value is never silent. */
+function distanceDoseNote(load) {
+  if (load.distanceDose !== null) {
+    return load.distanceDoseOptions.offsetSource === 'measured' ? 'SPL a 50 cm medido' : 'SPL a 50 cm estimado por distancia (aprox.)';
+  }
+  return load.units === 'calibrated' ? 'Sin perfil: elegilo antes de iniciar' : 'Sesión sin calibración acústica';
+}
+
 function distanceDoseOptionsFromForm() {
   const profile = el['dd-profile'].value;
   if (!profile) return null;
@@ -318,6 +326,7 @@ function renderLive(session) {
   setText(el['kpi-total-time'], duration(m.totalTime));
   setText(el['kpi-episodes'], String(m.episodes.count));
   setText(el['kpi-distance'], fixed(load.distanceDose, 2));
+  setText(el['kpi-distance-note'], distanceDoseNote(load));
   setText(el['kpi-pause'], m.pauses.count ? fixed(meanDuration(m.pauses), 1) : '—');
   setText(el['kpi-h'], fixed(load.h, 1));
   setText(el['kpi-zone'], zoneFor(load.h, load.params.beta).label.toLowerCase());

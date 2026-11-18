@@ -414,6 +414,16 @@ Con `k_v = Phi_k` y la forma discreta `D_d,k = D_d,k-1 + 4 * Phi_k * A_k * F0_k 
 - **medida** (preferida, como en el trabajo citado): se graba una vocal sostenida a la vez con el micrófono de diadema y con un sonómetro a 50 cm, y se ingresa la diferencia en dB;
 - **estimada por distancia** (aproximación): `20 * log10(0,5 / r)`, con `r` la distancia boca-micrófono en metros. Supone propagación esférica desde una fuente puntual, lo que no se cumple bien cerca de la boca, así que el resultado debe rotularse como aproximado.
 
+**Aclaración: entradas en esta implementación.** `D_d` se calcula con las señales que ya produce el dosímetro, no con las del trabajo original:
+
+| | Titze, Švec y Popolo (2003) | Este dosímetro |
+|---|---|---|
+| `F0` | Electroglotógrafo (EGG), un valor por ciclo vibratorio | Estimador YIN sobre la señal del micrófono, un valor por trama (§5) |
+| `k_v` | Sonoridad detectada en el EGG, por ciclo | `Phi_k = V_k * W_k * Q_k`: voz, hablante verificado y calidad (§6.3) |
+| SPL | RMS por ciclo del micrófono de diadema, referido a 50 cm con un sonómetro | RMS por trama del micrófono calibrado (§5.1), referido a 50 cm con la diferencia medida o estimada |
+
+Por eso `D_d` es comparable en orden de magnitud con los valores publicados, pero no idéntica: los errores de octava de `F0`, la resolución por trama y la atribución del hablante se trasladan a la dosis.
+
 `D_d` solo se calcula en sesiones con calibración acústica (§5.1) y con un perfil elegido. Pedirla en una sesión sin calibrar es un error explícito; nunca se ignora en silencio. El trabajo citado menciona, como punto de partida tomado de la vibración transmitida a la mano, un límite de unos 520 m; no es un límite validado para los pliegues vocales y la aplicación no lo usa como zona ni umbral.
 
 ## 12. Interfaz
@@ -498,13 +508,15 @@ La conservación de scores continuos permite recalcular decisiones con nuevos um
 3. Ejecutar:
 
 ```bash
-python3 -m http.server 8080
+npm start
 ```
+
+o, sin npm, `python3 scripts/dev-server.py 8080`. El servidor envía `Cache-Control: no-store` para que el navegador no siga ejecutando módulos JavaScript viejos después de una actualización (con `python3 -m http.server` puede ocurrir).
 
 4. Abrir en Chrome o Edge:
 
 ```text
-http://localhost:8080
+http://localhost:8080/public/index.html
 ```
 
 El acceso a micrófono requiere un contexto seguro. `localhost` es admitido por los navegadores modernos para pruebas locales.
