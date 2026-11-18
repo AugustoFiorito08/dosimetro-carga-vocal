@@ -178,10 +178,19 @@ export function createScoreSeries({ initialCapacity = 4096 } = {}) {
     return out;
   }
 
+  /** Finite F0 or level values of accepted-phonation frames, in time order. */
+  function voicedValues(key) {
+    if (key !== 'f0' && key !== 'level') throw new RangeError(`voicedValues supports "f0" and "level", got ${key}`);
+    const out = [];
+    for (let i = 0; i < size; i++) if (cols.phi[i] === 1 && !Number.isNaN(cols[key][i])) out.push(cols[key][i]);
+    return Float64Array.from(out);
+  }
+
   return {
     push,
     reset,
     sampleAt,
+    voicedValues,
     gaps,
     pauses,
     bucketize,

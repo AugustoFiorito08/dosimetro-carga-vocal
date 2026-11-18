@@ -98,3 +98,12 @@ describe('pauses and session gaps', () => {
     assert.equal(s.sampleAt(10.2).t, 10);
   });
 });
+
+describe('voicedValues', () => {
+  it('returns the finite F0 or level values of accepted phonation only', () => {
+    const s = fill(createScoreSeries(), [frame(0, { f0: 180, level: 70 }), frame(0.5, { phi: 0 }), frame(1, { f0: 220, level: 80 })]);
+    assert.deepEqual([...s.voicedValues('f0')], [180, 220]);
+    assert.deepEqual([...s.voicedValues('level')], [70, 80]);
+    assert.throws(() => s.voicedValues('h'), RangeError);
+  });
+});
