@@ -37,8 +37,12 @@ def is_allowed(raw_path):
 class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.split("?", 1)[0] in ("/", "/public", "/public/"):
+            # Explicit empty body: without Content-Length a proxy (such as a dev tunnel)
+            # may keep waiting for a body and never forward the redirect.
+            self._redirecting = True
             self.send_response(302)
             self.send_header("Location", APP_PATH)
+            self.send_header("Content-Length", "0")
             self.end_headers()
             return
         if not is_allowed(self.path):
@@ -59,7 +63,7 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
         path = self.path.split("?", 1)[0]
-        if path.endswith((".html", "/")):
+        if path.endswith(".html") and not getattr(self, "_redirecting", False):
             self.send_header("Clear-Site-Data", '"cache"')
         super().end_headers()
 
