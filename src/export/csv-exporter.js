@@ -1,6 +1,7 @@
 // Spec §13 — per-frame CSV export (RFC 4180: comma separator, dot decimal, CRLF).
+import { splFromPressure } from '../dsp/acoustic-calibration.js';
 
-export const ALGORITHM_VERSION = '0.3.2';
+export const ALGORITHM_VERSION = '0.4.0';
 
 /** Mandatory columns of spec §13, in order. New columns are appended so positional readers keep working. */
 export const CSV_COLUMNS = Object.freeze([
@@ -27,6 +28,9 @@ export const CSV_COLUMNS = Object.freeze([
   'parameters',
   'd_t',
   'd_c',
+  'pressure_pa',
+  'spl_db',
+  'd_d',
 ]);
 
 const LINE_BREAK = '\r\n';
@@ -67,7 +71,8 @@ export function serializeParameters(parameters = {}) {
 /**
  * Formats one frame as the cells of CSV_COLUMNS.
  * @param {object} analysis classifyFrame() analysis record
- * @param {{ h?: number, doses?: object, conventionalDoses?: object } | null} state vocal-load state after the frame
+ * @param {{ h?: number, doses?: object, conventionalDoses?: object, distanceDose?: number | null } | null} state
+ *   vocal-load state after the frame
  * @param {{ algorithmVersion?: string, parameters?: string | object, timestamp?: number }} [sessionParams]
  * @returns {string[]}
  */
@@ -75,6 +80,7 @@ export function formatFrameRow(analysis = {}, state = null, sessionParams = {}) 
   const a = analysis ?? {};
   const doses = state?.doses ?? {};
   const conventional = state?.conventionalDoses ?? {};
+  const pressurePa = state?.units === 'calibrated' && a.pressure > 0 ? a.pressure : null;
   const parameters =
     typeof sessionParams.parameters === 'string' ? sessionParams.parameters : serializeParameters(sessionParams.parameters);
   return [
@@ -101,6 +107,9 @@ export function formatFrameRow(analysis = {}, state = null, sessionParams = {}) 
     parameters,
     conventional.time,
     conventional.cycle,
+    pressurePa,
+    pressurePa === null ? null : splFromPressure(pressurePa),
+    state?.distanceDose,
   ].map(formatCell);
 }
 

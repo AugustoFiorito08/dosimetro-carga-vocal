@@ -1,15 +1,24 @@
 // Session flow (spec §16): calibrate -> enrol -> measure. Browser-free: it consumes
 // frame messages, so it runs identically behind the AudioWorklet port or in Node tests.
+import { DEFAULT_CALIBRATION_CONFIG, calibrationDrift, computeCalibration } from '../dsp/acoustic-calibration.js';
 import { classifyFrame, createFrameClassifier } from '../dsp/frame-classifier.js';
 import { createHighPassFilter } from '../dsp/high-pass.js';
-import { calibrateNoiseFloor, frameRms } from '../dsp/signal-quality.js';
+import { calibrateNoiseFloor, framePeak, frameRms } from '../dsp/signal-quality.js';
 import { DEFAULT_IDENTITY_CONFIG, enrollProfile } from '../dsp/speaker-profile.js';
-import { ALGORITHM_VERSION, buildCsv, formatFrameRow, serializeCsvRow, serializeParameters } from '../export/csv-exporter.js';
-import { createVocalLoadState, stepVocalLoad } from '../vocal-load.js';
+import {
+  ALGORITHM_VERSION,
+  buildCsv,
+  escapeCsvCell,
+  formatFrameRow,
+  serializeCsvRow,
+  serializeParameters,
+} from '../export/csv-exporter.js';
+import { createVocalLoadState, resolveDistanceDoseOptions, stepVocalLoad } from '../vocal-load.js';
 
 export const MODES = Object.freeze({
   IDLE: 'idle',
   CALIBRATING: 'calibrating',
+  ACOUSTIC_CALIBRATING: 'acoustic_calibrating',
   ENROLLING: 'enrolling',
   MEASURING: 'measuring',
   PAUSED: 'paused',
@@ -24,14 +33,19 @@ export const DEFAULT_SESSION_CONFIG = Object.freeze({
   enrollMinSeconds: 10,
   enrollMaxWallSeconds: 45, // give up if not enough valid voice within this audio time
   maxPrototypes: 8,
+  acousticCalibrationSeconds: 5, // reference tone capture (protocol §10.1)
+  calibratedReferencePressure: 1, // P_0 in Pa (94 dB SPL) for calibrated sessions; a modelling convention
 });
+
+const CALIBRATION_PHASES = ['pre', 'post'];
 
 const now = () => globalThis.performance?.now() ?? Date.now();
 
 /**
- * @param {{ sampleRate: number, config?: object, classifierConfig?: object, loadOptions?: object }} options
+ * @param {{ sampleRate: number, config?: object, classifierConfig?: object, loadOptions?: object,
+ *   calibrationConfig?: object }} options
  */
-export function createSessionController({ sampleRate, config, classifierConfig, loadOptions } = {}) {
+export function createSessionController({ sampleRate, config, classifierConfig, loadOptions, calibrationConfig } = {}) {
   if (!(sampleRate > 0)) throw new RangeError(`sampleRate must be > 0, got ${sampleRate}`);
   const cfg = { ...DEFAULT_SESSION_CONFIG, ...config };
   const listeners = new Set();
@@ -49,6 +63,13 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
   let records = []; // serialised CSV lines of the current / last session (spec §13)
   let sessionParams = null;
   let firstSample = null;
+  let acousticCalibration = null; // latest pre calibration, applied at the next start()
+  let sessionCalibration = null; // pre calibration used by the current / last session
+  let postCalibration = null;
+  let drift = null;
+  let recordedParameters = null; // parameters cell as serialised in the records, rewritten at export
+  let distanceDoseInput = null; // options for the distance dose, applied at the next start()
+  let distanceDoseOptions = null; // the same, resolved
   const stats = {
     framesReceived: 0,
     framesProcessed: 0,
@@ -87,6 +108,50 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
       }
     });
   }
+
+  /**
+   * Reference-tone calibration (protocol §10.1). `pre` sets C_mic for the next start();
+   * `post` checks the drift against the calibration the last session used.
+   * @param {{ referenceDbSpl?: number, phase?: 'pre' | 'post' }} [options]
+   */
+  function calibrateAcoustic({ referenceDbSpl, phase = 'pre' } = {}) {
+    if (!CALIBRATION_PHASES.includes(phase)) return Promise.reject(new RangeError(`unknown calibration phase "${phase}"`));
+    if (phase === 'post' && (sessionCalibration === null || records.length === 0)) {
+      return Promise.reject(new Error('the post check needs a calibrated session with recorded frames'));
+    }
+    const config = { ...DEFAULT_CALIBRATION_CONFIG, ...calibrationConfig };
+    if (referenceDbSpl !== undefined) config.referenceDbSpl = referenceDbSpl;
+    const frames = [];
+    let elapsed = 0;
+    return beginTask(MODES.ACOUSTIC_CALIBRATING, (samples, dt) => {
+      frames.push({ rms: frameRms(samples), peak: framePeak(samples), dt });
+      elapsed += dt;
+      emit({ type: 'progress', mode, elapsed, target: cfg.acousticCalibrationSeconds });
+      if (elapsed < cfg.acousticCalibrationSeconds) return;
+      let calibration;
+      try {
+        calibration = computeCalibration(frames, config);
+      } catch (error) {
+        task.reject(error);
+        return;
+      }
+      if (phase === 'pre') {
+        acousticCalibration = calibration;
+      } else {
+        postCalibration = calibration;
+        drift = calibrationDrift(sessionCalibration, calibration, { toleranceDb: config.driftToleranceDb });
+        sessionParams = { ...sessionParams, parameters: `${recordedParameters};${serializeParameters(postParameters())}` };
+      }
+      task.resolve(calibration);
+    });
+  }
+
+  const postParameters = () => ({
+    calPostCoefficient: postCalibration.coefficient,
+    calDriftPct: drift.percent,
+    calDriftDb: drift.db,
+    calWithinTolerance: drift.withinTolerance,
+  });
 
   function enroll() {
     if (noiseFloorRms === null) return Promise.reject(new Error('calibrate the ambient noise before enrolling'));
@@ -132,16 +197,39 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     similarityThreshold = value;
   }
 
+  /**
+   * Distance dose (Titze, Švec & Popolo, 2003) for the next start(); null disables it.
+   * @param {{ profile: 'male' | 'female', spl50cmOffsetDb?: number, mouthDistanceM?: number } | null} options
+   */
+  function setDistanceDoseOptions(options) {
+    distanceDoseOptions = options === null ? null : resolveDistanceDoseOptions(options);
+    distanceDoseInput = options === null ? null : { ...options };
+  }
+
   function start() {
     if (mode !== MODES.IDLE) throw new Error(`cannot start measuring while ${mode}`);
     if (profile === null) throw new Error('enrol the speaker before starting a session');
+    if (distanceDoseOptions !== null && acousticCalibration === null) {
+      throw Object.assign(new Error('the distance dose needs an acoustic calibration first'), {
+        code: 'distance_dose_needs_calibration',
+      });
+    }
     const identity = {
       ...classifierConfig?.identity,
       acceptThreshold: similarityThreshold,
       rejectThreshold: Math.max(0, similarityThreshold - THRESHOLD_HYSTERESIS),
     };
-    classifier = createFrameClassifier({ profile, config: { ...classifierConfig, identity }, noiseFloorRms });
-    load = createVocalLoadState(loadOptions);
+    sessionCalibration = acousticCalibration;
+    postCalibration = null;
+    drift = null;
+    const calibrated = sessionCalibration !== null;
+    const calibration = calibrated ? { pressureScale: sessionCalibration.coefficient } : {};
+    classifier = createFrameClassifier({ profile, config: { ...classifierConfig, identity, ...calibration }, noiseFloorRms });
+    load = createVocalLoadState(
+      calibrated
+        ? { referencePressure: cfg.calibratedReferencePressure, ...loadOptions, calibrated: true, distanceDose: distanceDoseInput ?? undefined }
+        : loadOptions,
+    );
     const { pitch, quality, identity: id, noisePeriodicityMax, minVocalBandRatio } = classifier.config;
     sessionParams = {
       algorithmVersion: ALGORITHM_VERSION,
@@ -164,8 +252,15 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
         noisePeriodicityMax,
         minVocalBandRatio,
         highPassHz: highPass.cutoffHz,
+        ddProfile: distanceDoseOptions?.profile,
+        ddOffsetDb: distanceDoseOptions?.offsetDb,
+        ddOffsetSource: distanceDoseOptions?.offsetSource,
+        ddMouthDistanceM: distanceDoseOptions?.mouthDistanceM,
+        calRefDbSpl: sessionCalibration?.referenceDbSpl,
+        calCoefficient: sessionCalibration?.coefficient,
       }),
     };
+    recordedParameters = sessionParams.parameters;
     records = [];
     firstSample = null;
     mode = MODES.MEASURING;
@@ -189,9 +284,20 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     return load;
   }
 
-  /** CSV of the current or last session; null when nothing was recorded. */
+  /**
+   * CSV of the current or last session; null when nothing was recorded. Session-level
+   * parameters added after recording (post calibration) are written into every row.
+   */
   function exportCsv() {
-    return records.length === 0 ? null : buildCsv(records);
+    if (records.length === 0) return null;
+    if (sessionParams.parameters === recordedParameters) return buildCsv(records);
+    const before = escapeCsvCell(recordedParameters);
+    const after = escapeCsvCell(sessionParams.parameters);
+    // The parameters cell is followed only by numeric cells, so its last occurrence is the cell itself.
+    return buildCsv(records.map((line) => {
+      const at = line.lastIndexOf(before);
+      return line.slice(0, at) + after + line.slice(at + before.length);
+    }));
   }
 
   function measure(samples, startSample) {
@@ -238,12 +344,19 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     stop,
     exportCsv,
     setSimilarityThreshold,
+    setDistanceDoseOptions,
     subscribe(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);
     },
     get mode() { return mode; },
+    calibrateAcoustic,
     get noiseFloorRms() { return noiseFloorRms; },
+    get acousticCalibration() { return acousticCalibration; },
+    get sessionCalibration() { return sessionCalibration; },
+    get postCalibration() { return postCalibration; },
+    get calibrationDrift() { return drift; },
+    get distanceDoseOptions() { return distanceDoseOptions; },
     get profile() { return profile; },
     get load() { return load; },
     get latest() { return latest; },
