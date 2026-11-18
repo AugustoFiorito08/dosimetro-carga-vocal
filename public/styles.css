@@ -207,6 +207,108 @@ select, input[type='number'] {
 .diagnostics b { font-family: var(--font-data); font-weight: 500; color: var(--text); }
 .diagnostics b[data-alert='true'] { color: var(--danger); }
 
+:root {
+  --score-f0: #3987e5;
+  --score-level: #d95926;
+  --score-h: #199e70;
+  --score-rate: #c98500;
+  --score-dose: #d55181;
+  --score-pause: rgba(92, 200, 214, 0.08);
+  --score-gap: rgba(226, 232, 238, 0.04);
+}
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tab {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.tab[aria-selected='true'] { color: var(--text); border-bottom-color: var(--accent); }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tab-panel { display: grid; gap: 16px; min-width: 0; }
+
+.score { display: grid; gap: 14px; min-width: 0; container-type: inline-size; }
+.score-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.score-head h2 { color: var(--text); font-size: 15px; margin: 0; }
+.score-sub { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.score-controls { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.score-badge {
+  justify-self: start;
+  margin: 0;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.score-tracks { position: relative; display: grid; gap: 6px; }
+.score-row {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr) 180px;
+  gap: 12px;
+  align-items: center;
+}
+.score-row canvas { width: 100%; height: 64px; display: block; background: var(--panel-raised); border-radius: 4px; touch-action: pan-y; }
+.score-row[data-row='phi'] canvas { height: 28px; }
+.score-axis-row canvas { height: 20px; background: none; }
+.score-label { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.score-label > span:last-child { display: grid; }
+.score-label b { color: var(--text); font-weight: 600; font-size: 13px; }
+.score-num {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 11px;
+}
+.score-note { margin: 0; font-size: 11px; color: var(--muted); }
+.score-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--muted); pointer-events: none; }
+.score-tooltip {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  gap: 2px;
+  min-width: 170px;
+  padding: 8px 10px;
+  background: var(--panel-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-family: var(--font-data);
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+.score-tooltip em { font-style: normal; color: var(--muted); }
+.score-callouts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.score-callouts p { margin: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); font-size: 12px; color: var(--muted); }
+.score-callouts b { color: var(--text); }
+.score-analogy h3 { margin-bottom: 8px; }
+.score-analogy ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); }
+.score-analogy b { color: var(--text); }
+
+@container (max-width: 860px) {
+  .score-row { grid-template-columns: 132px minmax(0, 1fr); column-gap: 10px; row-gap: 2px; }
+  .score-note { grid-column: 2; }
+  .score-axis-row > span:last-child { display: none; }
+}
+@container (max-width: 520px) {
+  .score-row { grid-template-columns: minmax(0, 1fr); }
+  .score-note { grid-column: 1; }
+  .score-axis-row > span { display: none; }
+}
+
 @media (max-width: 1180px) {
   .kpis { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
   .status-kpi { grid-row: auto; grid-column: 1 / -1; }

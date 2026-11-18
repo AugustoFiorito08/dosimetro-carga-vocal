@@ -115,6 +115,12 @@
           <button id="export" type="button" class="btn" disabled>Exportar CSV</button>
         </div>
 
+        <div class="tabs" role="tablist" aria-label="Vistas">
+          <button type="button" role="tab" class="tab" id="tab-btn-live" aria-controls="tab-live" aria-selected="true">Panel en vivo</button>
+          <button type="button" role="tab" class="tab" id="tab-btn-score" aria-controls="tab-score" aria-selected="false" tabindex="-1">Partitura vocal</button>
+        </div>
+
+        <div class="tab-panel" id="tab-live" role="tabpanel" aria-labelledby="tab-btn-live">
         <section class="kpis" aria-label="Indicadores en vivo">
           <article class="kpi status-kpi" data-category="none" id="status-card">
             <h3>Estado de fonación</h3>
@@ -169,6 +175,86 @@
             </tbody>
           </table>
           <p class="hint" id="dose-units">Unidades relativas (sin calibración de presión).</p>
+        </section>
+
+        </div>
+
+        <section class="panel score" id="tab-score" role="tabpanel" aria-labelledby="tab-btn-score" hidden>
+          <div class="score-head">
+            <div>
+              <h2>Partitura dosimétrica vocal</h2>
+              <p class="score-sub">No solo cuánto se acumula: cuándo y cómo se utiliza la voz.</p>
+            </div>
+            <div class="score-controls">
+              <label for="score-dose">Dosis</label>
+              <select id="score-dose">
+                <option value="none">D0 · sin memoria</option>
+                <option value="linear">DL · lineal</option>
+                <option value="power">DP · potencial</option>
+                <option value="exponential">DE · exponencial</option>
+                <option value="saturating">DS · saturante</option>
+                <option value="distance" disabled>Dd · distancia (m)</option>
+              </select>
+            </div>
+          </div>
+          <p class="score-badge">Modelo conceptual · validación pendiente</p>
+
+          <div class="score-tracks">
+            <div class="score-row" data-row="phi">
+              <div class="score-label"><span class="score-num">1</span><span>Fonación y pausas<b>Φ(t)</b></span></div>
+              <canvas data-track="phi" aria-label="Fonación atribuida y pausas a lo largo de la sesión"></canvas>
+              <p class="score-note">Bloques de fonación atribuida e intervalos de pausa.</p>
+            </div>
+            <div class="score-row">
+              <div class="score-label"><span class="score-num">2</span><span>Frecuencia fundamental<b>F<sub>0</sub> (Hz)</b></span></div>
+              <canvas data-track="f0" aria-label="Frecuencia fundamental durante la voz"></canvas>
+              <p class="score-note">Solo durante la voz atribuida; sin valores en las pausas.</p>
+            </div>
+            <div class="score-row">
+              <div class="score-label"><span class="score-num">3</span><span>Nivel vocal<b>L<sub>p</sub> (<span id="score-level-unit">dBFS</span>)</b></span></div>
+              <canvas data-track="level" aria-label="Nivel vocal durante la voz"></canvas>
+              <p class="score-note">Solo durante la voz. dB SPL si la sesión está calibrada; dBFS si no.</p>
+            </div>
+            <div class="score-row">
+              <div class="score-label"><span class="score-num">4</span><span>Memoria modelada<b>H(t) (s)</b></span></div>
+              <canvas data-track="h" aria-label="Estado de carga reciente H"></canvas>
+              <p class="score-note">Estado matemático del modelo, no fatiga medida.</p>
+            </div>
+            <div class="score-row">
+              <div class="score-label"><span class="score-num">5</span><span>Tasa de dosis<b>ΔD/Δt (<span id="score-rate-unit">u/min</span>)</b></span></div>
+              <canvas data-track="rate" aria-label="Tasa de acumulación de la dosis"></canvas>
+              <p class="score-note">Picos de acumulación; cero en las pausas.</p>
+            </div>
+            <div class="score-row">
+              <div class="score-label"><span class="score-num">6</span><span>Dosis acumulada<b><span id="score-dose-name">D<sub>0</sub></span> (<span id="score-dose-unit">u</span>)</b></span></div>
+              <canvas data-track="dose" aria-label="Dosis acumulada"></canvas>
+              <p class="score-note">Siempre creciente o plana; mesetas en las pausas.</p>
+            </div>
+            <div class="score-row score-axis-row">
+              <span></span>
+              <canvas data-axis aria-hidden="true"></canvas>
+              <span></span>
+            </div>
+            <div class="score-tooltip" data-tooltip role="status" hidden></div>
+            <p class="score-empty" id="score-empty">Iniciá una sesión para ver la partitura.</p>
+          </div>
+
+          <div class="score-callouts">
+            <p><b>En la pausa:</b> la dosis acumulada permanece; H puede disminuir.</p>
+            <p>Los picos de ΔD/Δt son la tasa de acumulación, no una caída o subida reversible de D.</p>
+            <p>Sombreado claro: pausas de 2 s o más · gris: sesión en pausa. u = unidades del modelo.</p>
+          </div>
+
+          <div class="score-analogy" aria-label="Analogía musical">
+            <h3>Analogía musical: una misma canción, varios elementos</h3>
+            <ul>
+              <li><b>Altura</b> → F<sub>0</sub></li>
+              <li><b>Duración</b> → fonación</li>
+              <li><b>Dinámica</b> → nivel vocal</li>
+              <li><b>Silencios</b> → pausas</li>
+              <li><b>Secuencia</b> → historia de exposición (H)</li>
+            </ul>
+          </div>
         </section>
 
         <footer class="diagnostics" aria-label="Diagnóstico de adquisición">

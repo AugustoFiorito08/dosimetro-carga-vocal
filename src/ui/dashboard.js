@@ -7,6 +7,8 @@ import { toDb } from '../dsp/signal-quality.js';
 import { csvFileName, downloadCsv } from '../export/csv-exporter.js';
 import { DEFAULT_MODEL_PARAMS, meanDuration, phonationPercentage } from '../vocal-load.js';
 import { createLoadChart, zoneFor } from './load-chart.js';
+import { createScoreChart } from './score-chart.js';
+import { createScoreSeries } from './score-series.js';
 
 const CATEGORY_LABELS = {
   fonacion_atribuida: 'Fonación atribuida',
@@ -114,11 +116,76 @@ async function populateDevices() {
   );
 }
 
+// ---------- vocal-load score tab ----------
+const SCORE_DOSE_NAMES = {
+  none: 'D<sub>0</sub>', linear: 'D<sub>L</sub>', power: 'D<sub>P</sub>',
+  exponential: 'D<sub>E</sub>', saturating: 'D<sub>S</sub>', distance: 'D<sub>d</sub>',
+};
+const scoreSeries = createScoreSeries();
+const score = createScoreChart($('tab-score'), { series: scoreSeries });
+const scoreDose = $('score-dose');
+
+function applyScoreDose() {
+  const dose = scoreDose.value;
+  const unit = dose === 'distance' ? 'm' : 'u';
+  $('score-dose-name').innerHTML = SCORE_DOSE_NAMES[dose];
+  setText($('score-dose-unit'), unit);
+  setText($('score-rate-unit'), `${unit}/min`);
+  score.configure({ dose, doseUnit: unit });
+}
+scoreDose.addEventListener('change', applyScoreDose);
+
+function resetScore(load, startDate) {
+  scoreSeries.reset();
+  const distanceOption = scoreDose.querySelector('option[value="distance"]');
+  distanceOption.disabled = load.distanceDose === null;
+  if (distanceOption.disabled && scoreDose.value === 'distance') scoreDose.value = 'none';
+  const levelUnit = load.units === 'calibrated' ? 'dB SPL' : 'dBFS';
+  setText($('score-level-unit'), levelUnit);
+  $('score-empty').hidden = false;
+  score.configure({ beta: load.params.beta, startDate, levelUnit });
+  applyScoreDose();
+}
+
+function recordScoreFrame({ analysis: a, load, timestamp }) {
+  const level = load.units === 'calibrated' && a.pressure > 0 ? splFromPressure(a.pressure) : a.levelDb;
+  scoreSeries.push({
+    t: timestamp, dt: a.dt, phi: a.phi, f0: a.phi ? a.f0 : null, level: a.phi ? level : null,
+    h: load.h, doses: load.doses, distanceDose: load.distanceDose,
+  });
+  if (scoreSeries.length === 1) $('score-empty').hidden = true;
+  score.invalidate();
+}
+
+const tabs = [
+  { button: $('tab-btn-live'), panel: $('tab-live') },
+  { button: $('tab-btn-score'), panel: $('tab-score') },
+];
+function selectTab(index) {
+  tabs.forEach(({ button, panel }, i) => {
+    const selected = i === index;
+    button.setAttribute('aria-selected', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+    panel.hidden = !selected;
+  });
+  if (index === 1) score.refresh();
+}
+tabs.forEach(({ button }, i) => {
+  button.addEventListener('click', () => selectTab(i));
+  button.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+    const next = (i + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length;
+    selectTab(next);
+    tabs[next].button.focus();
+  });
+});
+
 function onSessionEvent(event) {
   if (event.type === 'progress') progress = event;
   else if (event.type === 'frame') {
     const category = event.analysis.category;
     chart.push(event.timestamp, event.load.h, category);
+    recordScoreFrame(event);
   }
 }
 
@@ -224,6 +291,7 @@ el.start.addEventListener('click', () => {
     const load = manager.session.start();
     chart.reset({ beta: load.params.beta });
     sessionStartedAt = new Date();
+    resetScore(load, sessionStartedAt);
     setText(el['dose-units'], load.units === 'relative' ? 'Unidades relativas (sin calibración de presión).' : 'Presión calibrada en Pa.');
     say('Sesión en curso.');
   } catch (error) {
