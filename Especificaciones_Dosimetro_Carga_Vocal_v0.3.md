@@ -456,6 +456,25 @@ La pantalla funcional incluye:
 
 Las zonas de carga son provisionales y no deben interpretarse como límites clínicos o legales.
 
+### 12.1 Partitura vocal
+
+La solapa **Partitura vocal** muestra la evolución temporal de toda la sesión como una partitura: seis pistas sincronizadas sobre un mismo eje de tiempo (hora del día desde el inicio de la sesión).
+
+| Pista | Contenido | Nota |
+|---|---|---|
+| 1. `Φ(t)` | bloques de fonación atribuida y pausas | intensidad proporcional a la fracción de fonación de cada columna |
+| 2. `F0` (Hz) | media de `F0` en la fonación | sin valores en las pausas; escala fija 75-350 Hz, ampliada si los datos la exceden |
+| 3. `L_p` | nivel medio en la fonación, en dB SPL si la sesión está calibrada (40-110) o en dBFS (−70 a 0) | escala ampliada solo por los percentiles 2-98 de los datos |
+| 4. `H(t)` (s) | estado de carga reciente | estado matemático del modelo, no fatiga medida |
+| 5. `ΔD/Δt` | dosis ganada en cada columna dividida por el tiempo que cubre, por minuto | picos de acumulación; cero en las pausas |
+| 6. `D` | dosis acumulada elegida: `D_0`, `D_L`, `D_P`, `D_E`, `D_S` o `D_d` (si la sesión la calcula) | siempre creciente o plana; mesetas en las pausas |
+
+- Las pausas de 2 s o más se sombrean en todas las pistas; los intervalos con la sesión en pausa se muestran como huecos, nunca como datos.
+- Al pasar el cursor, una línea vertical recorre las seis pistas y un recuadro muestra la hora y el valor de cada pista en ese instante.
+- Los datos se guardan por trama y se reducen a una columna cada 2 píxeles antes de dibujar, para sostener una jornada completa. Mientras llegan tramas, la partitura se redibuja como máximo cada 0,7 s y solo si la solapa está visible.
+- La solapa incluye la analogía musical (altura → `F0`, duración → fonación, dinámica → nivel, silencios → pausas, secuencia → historia de exposición `H`) y la advertencia "Modelo conceptual · validación pendiente".
+- No incluye comparaciones entre jornadas ni entre docentes, que requieren guardar varias sesiones.
+
 ## 13. Exportación de datos
 
 La aplicación exporta un archivo CSV por trama. Debe incluir, como mínimo:

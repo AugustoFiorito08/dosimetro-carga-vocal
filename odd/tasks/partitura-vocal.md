@@ -26,13 +26,14 @@ Branch: `feat/partitura-vocal`, stacked on `feat/calibracion-acustica` (uses cal
 
 | ID | Specs | Route | Status | Evidence |
 |---|---|---|---|---|
-| T1 | S2, S3, S8 | inline | pending | |
-| T2 | S2, S4, S5, S6 | inline | pending | |
-| T3 | S1, S3, S7 | inline | pending | |
-| T4 | docs | inline | pending | |
+| T1 | S2, S3, S8 | inline | done | 3a28d2c · RED: missing module; GREEN: 11 tests; 675 000 frames: bucketize 50 ms, pauses + gaps 40 ms |
+| T2 | S2, S4, S5, S6 | inline | done | bc38cfb · helpers: 5 tests (written with the code); browser: six tracks inked, tooltip values match the session (F0 186 Hz, 94.4 dB SPL, session pause shown as a gap) |
+| T3 | S1, S3, S7 | inline | done | b855526 · browser: synthetic session with D_d, dose switch to D_d, layouts 1366 px (3 columns), 900 px and phone width, no overflow, no errors |
+| T4 | docs | inline | done | spec §12.1 · suite 192/192 |
 
 ## Log
 
 - **L1** (2026-11-18, user): "agregar un solapa para poder lograr algo similar a esto. Es una analogía que representa una partitura de carga vocal. Es la evolución temporal del uso de la voz." (with a reference image: VocalDose "Partitura dosimétrica vocal").
 - **L2** Palette for the five line/bar tracks (dark surface `#151f29`): categorical slots 1-5 of the dataviz reference palette, `#3987e5, #d95926, #199e70, #c98500, #d55181`; the validator passes all checks. The `Φ` band reuses the app's phonation colour.
 - **L3** Routing: all inline (one feature, dependent units).
+- **L4** Fixed scales (F0 75-350 Hz, 40-110 dB SPL, −70-0 dBFS) widened by the 2nd-98th percentile: the first browser run showed block-onset frames stretching an automatic level scale. Container queries fixed a 121 px plot column at 900 px viewport width. Spec §12.1 documents the tab. Algorithm version unchanged (the CSV and the computation do not change). Push and PR left to the user.
