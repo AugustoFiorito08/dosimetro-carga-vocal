@@ -4,7 +4,12 @@ import { createAudioManager } from '../audio/audio-manager.js';
 import { MODES } from '../audio/session-controller.js';
 import { splFromPressure } from '../dsp/acoustic-calibration.js';
 import { toDb } from '../dsp/signal-quality.js';
-import { csvFileName, downloadCsv } from '../export/csv-exporter.js';
+import { ALGORITHM_VERSION, csvFileName, downloadCsv } from '../export/csv-exporter.js';
+import { detectEvents } from '../store/auto-events.js';
+import { buildWorkday, validateCode } from '../store/workday.js';
+import { createIndexedDbRepository } from '../store/workday-repository.js';
+import { createBoards } from './boards/boards.js';
+import { EVENT_LABELS } from './boards/views.js';
 import { DEFAULT_MODEL_PARAMS, meanDuration, phonationPercentage } from '../vocal-load.js';
 import { createLoadChart, zoneFor } from './load-chart.js';
 import { createScoreChart } from './score-chart.js';
@@ -157,9 +162,30 @@ function recordScoreFrame({ analysis: a, load, timestamp }) {
   score.invalidate();
 }
 
+// ---------- dashboards (Mi jornada, Dirección, Analítica) ----------
+function downloadText(text, fileName, type) {
+  const href = URL.createObjectURL(new Blob([text], { type }));
+  const link = Object.assign(document.createElement('a'), { href, download: fileName });
+  link.style.display = 'none';
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 0);
+}
+const boards = createBoards({
+  roots: { teacher: $('tab-teacher'), director: $('tab-director'), analytics: $('tab-analytics') },
+  bar: $('board-bar'),
+  repository: createIndexedDbRepository(),
+  download: downloadText,
+  say,
+});
+
 const tabs = [
   { button: $('tab-btn-live'), panel: $('tab-live') },
   { button: $('tab-btn-score'), panel: $('tab-score') },
+  { button: $('tab-btn-teacher'), panel: $('tab-teacher'), board: 'teacher' },
+  { button: $('tab-btn-director'), panel: $('tab-director'), board: 'director' },
+  { button: $('tab-btn-analytics'), panel: $('tab-analytics'), board: 'analytics' },
 ];
 function selectTab(index) {
   tabs.forEach(({ button, panel }, i) => {
@@ -169,7 +195,56 @@ function selectTab(index) {
     panel.hidden = !selected;
   });
   if (index === 1) score.refresh();
+  boards.show(tabs[index].board ?? null);
 }
+
+// ---------- workday form (codes, VAS, context events, save) ----------
+const WORKDAY_FIELDS = ['jr-participant', 'jr-school', 'jr-classroom'];
+let workdayEvents = [];
+let workdaySaved = false;
+for (const id of WORKDAY_FIELDS) {
+  try { $(id).value = localStorage.getItem(`dosimetro.${id}`) ?? ''; } catch { /* storage unavailable */ }
+  $(id).addEventListener('change', () => {
+    try { localStorage.setItem(`dosimetro.${id}`, $(id).value.trim()); } catch { /* storage unavailable */ }
+  });
+}
+const vasValue = (id) => {
+  const raw = $(id).value.trim();
+  if (raw === '') return null;
+  const v = Number(raw);
+  if (!(v >= 0 && v <= 100)) throw new RangeError('La EVA debe estar entre 0 y 100.');
+  return v;
+};
+function renderWorkdayEvents() {
+  setText($('jr-events'), workdayEvents.length
+    ? workdayEvents.map((e) => `${duration(e.t)} ${EVENT_LABELS[e.type]}`).join(' · ')
+    : 'Sin eventos marcados.');
+}
+$('jr-event-add').addEventListener('click', () => {
+  const t = manager.session?.latest?.timestamp ?? 0;
+  workdayEvents.push({ t, type: $('jr-event-type').value, source: 'docente' });
+  renderWorkdayEvents();
+});
+$('jr-save').addEventListener('click', async () => {
+  try {
+    const session = manager.session;
+    const meta = {
+      participantId: validateCode('Docente', $('jr-participant').value.trim()),
+      schoolId: validateCode('Escuela', $('jr-school').value.trim()),
+      classroom: validateCode('Aula', $('jr-classroom').value.trim()),
+      fatiguePre: vasValue('jr-pre'),
+      fatiguePost: vasValue('jr-post'),
+      events: [...workdayEvents, ...detectEvents(scoreSeries)].sort((a, b) => a.t - b.t),
+    };
+    const workday = buildWorkday({ meta, load: session.load, series: scoreSeries, startedAt: sessionStartedAt, algorithmVersion: ALGORITHM_VERSION, source: 'live' });
+    await boards.save(workday);
+    workdaySaved = true;
+    setText($('jr-status'), `Guardada ${workday.id}`);
+    say(`Jornada guardada (${workday.events.length} eventos). Ya aparece en Mi jornada, Dirección y Analítica.`);
+  } catch (error) {
+    say(`No se pudo guardar la jornada: ${error.message.includes('code of') ? 'completá docente, escuela y aula con códigos (letras, números, «.», «-» o «_», sin espacios).' : error.message}`, 'error');
+  }
+});
 tabs.forEach(({ button }, i) => {
   button.addEventListener('click', () => selectTab(i));
   button.addEventListener('keydown', (event) => {
@@ -292,6 +367,10 @@ el.start.addEventListener('click', () => {
     chart.reset({ beta: load.params.beta });
     sessionStartedAt = new Date();
     resetScore(load, sessionStartedAt);
+    workdayEvents = [];
+    workdaySaved = false;
+    renderWorkdayEvents();
+    setText($('jr-status'), 'Midiendo…');
     setText(el['dose-units'], load.units === 'relative' ? 'Unidades relativas (sin calibración de presión).' : 'Presión calibrada en Pa.');
     say('Sesión en curso.');
   } catch (error) {
@@ -338,6 +417,10 @@ function renderControls(session) {
   el.resume.disabled = mode !== MODES.PAUSED;
   el.finish.disabled = mode !== MODES.MEASURING && mode !== MODES.PAUSED;
   el.export.disabled = !(idle || mode === MODES.PAUSED) || !session?.recordCount;
+  const measuring = mode === MODES.MEASURING || mode === MODES.PAUSED;
+  $('jr-event-type').disabled = !measuring;
+  $('jr-event-add').disabled = !measuring;
+  $('jr-save').disabled = !idle || !session?.recordCount || workdaySaved || !sessionStartedAt;
 
   setAttr(el['mode-dot'], 'data-mode', mode ?? 'none');
   setText(el['mode-label'], mode ? MODE_LABELS[mode] : 'Sin audio');
