@@ -20,6 +20,7 @@ import functools
 import http.server
 import pathlib
 import posixpath
+import socket
 import urllib.parse
 
 APP_PATH = "/public/index.html"
@@ -35,6 +36,11 @@ def is_allowed(raw_path):
 
 
 class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
+    # HTTP/1.1 keep-alive: tunnel and port-forwarding proxies reuse connections, and with
+    # HTTP/1.0 they could pick one the server had already closed. Every response sends
+    # Content-Length (files, errors and the redirect), which keep-alive requires.
+    protocol_version = "HTTP/1.1"
+
     def do_GET(self):
         if self.path.split("?", 1)[0] in ("/", "/public", "/public/"):
             # Explicit empty body: without Content-Length a proxy (such as a dev tunnel)
@@ -68,13 +74,27 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
 
+class DualStackServer(http.server.ThreadingHTTPServer):
+    """Listens on IPv6 and IPv4 (localhost may resolve to ::1) with a deeper accept queue,
+    since the app loads about 25 modules in parallel."""
+
+    address_family = socket.AF_INET6
+    request_queue_size = 64
+    daemon_threads = True
+
+    def server_bind(self):
+        with __import__("contextlib").suppress(OSError, AttributeError):
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        super().server_bind()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("port", nargs="?", type=int, default=8080)
     parser.add_argument("--directory", default=str(pathlib.Path(__file__).resolve().parent.parent))
     args = parser.parse_args()
     handler = functools.partial(NoCacheHandler, directory=args.directory)
-    with http.server.ThreadingHTTPServer(("", args.port), handler) as server:
+    with DualStackServer(("::", args.port), handler) as server:
         print(f"Serving {args.directory} at http://localhost:{args.port}/public/index.html (no-store)")
         server.serve_forever()
 
