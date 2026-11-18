@@ -25,7 +25,9 @@ export function ticks(lo, hi, count = 4) {
   const p = 10 ** Math.floor(Math.log10(raw));
   const step = [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw);
   const out = [];
-  for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(+v.toFixed(10));
+  const first = Math.floor(lo / step + 1e-9) * step;
+  const last = Math.ceil(hi / step - 1e-9) * step;
+  for (let v = first; v <= last + step * 1e-9; v += step) out.push(+v.toFixed(10));
   return out;
 }
 

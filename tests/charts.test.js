@@ -10,6 +10,12 @@ describe('chart helpers', () => {
     assert.deepEqual(ticks(0, 1, 5), [0, 0.2, 0.4, 0.6, 0.8, 1]);
   });
 
+  it('the last tick never falls below the maximum, so marks stay inside the plot', () => {
+    assert.deepEqual(ticks(0, 386), [0, 100, 200, 300, 400]);
+    assert.ok(ticks(0, 143_700).at(-1) >= 143_700);
+    assert.ok(ticks(-21, 63)[0] <= -21);
+  });
+
   it('compact formats with Argentine decimals and k / M suffixes', () => {
     assert.equal(compact(3_200_000), '3,2 M');
     assert.equal(compact(12_400), '12,4 k');
