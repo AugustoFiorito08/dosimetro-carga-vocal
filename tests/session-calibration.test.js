@@ -150,7 +150,7 @@ describe('acoustic calibration in the session flow', () => {
     await prepare(ctx);
     ctx.session.setDistanceDoseOptions({ profile: 'female', spl50cmOffsetDb: 18 });
     assert.deepEqual(ctx.session.distanceDoseOptions, { profile: 'female', offsetDb: 18, offsetSource: 'measured' });
-    assert.throws(() => ctx.session.start(), /calibrat/);
+    assert.throws(() => ctx.session.start(), (e) => /calibrat/.test(e.message) && e.code === 'distance_dose_needs_calibration');
     assert.equal(ctx.session.mode, MODES.IDLE);
     ctx.session.setDistanceDoseOptions(null);
     assert.equal(ctx.session.start().distanceDose, null);

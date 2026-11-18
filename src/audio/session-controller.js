@@ -210,7 +210,9 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     if (mode !== MODES.IDLE) throw new Error(`cannot start measuring while ${mode}`);
     if (profile === null) throw new Error('enrol the speaker before starting a session');
     if (distanceDoseOptions !== null && acousticCalibration === null) {
-      throw new Error('the distance dose needs an acoustic calibration first');
+      throw Object.assign(new Error('the distance dose needs an acoustic calibration first'), {
+        code: 'distance_dose_needs_calibration',
+      });
     }
     const identity = {
       ...classifierConfig?.identity,

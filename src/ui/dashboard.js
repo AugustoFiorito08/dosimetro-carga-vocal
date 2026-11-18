@@ -41,6 +41,10 @@ const MODE_LABELS = {
   [MODES.PAUSED]: 'En pausa',
 };
 const DOSE_MODELS = ['none', 'linear', 'power', 'exponential', 'saturating'];
+const START_ERRORS = {
+  distance_dose_needs_calibration:
+    'No se inició la sesión: la dosis de distancia necesita la calibración acústica. Calibrá con el tono de referencia o elegí «Sin dosis de distancia».',
+};
 const CALIBRATION_REASONS = {
   too_short: 'el tono fue demasiado corto',
   clipping: 'el tono satura la entrada; bajá la ganancia',
@@ -223,7 +227,7 @@ el.start.addEventListener('click', () => {
     setText(el['dose-units'], load.units === 'relative' ? 'Unidades relativas (sin calibración de presión).' : 'Presión calibrada en Pa.');
     say('Sesión en curso.');
   } catch (error) {
-    say(error.message, 'error');
+    say(START_ERRORS[error.code] ?? error.message, 'error');
   }
 });
 el.pause.addEventListener('click', () => {
