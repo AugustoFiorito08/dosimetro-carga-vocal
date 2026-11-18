@@ -387,7 +387,34 @@ D_t,k = D_t,k-1 + Phi_k * Delta_t            (dosis de tiempo, s)
 D_c,k = D_c,k-1 + Phi_k * F0_k * Delta_t     (dosis de ciclos, ciclos vibratorios)
 ```
 
-No dependen de la presión ni de `H`. Permiten construir condiciones experimentales con dosis convencional equivalente y distinta distribución temporal de pausas. La dosis de distancia requiere un nivel de presión sonora calibrado y queda para la fase de calibración acústica.
+No dependen de la presión ni de `H`. Permiten construir condiciones experimentales con dosis convencional equivalente y distinta distribución temporal de pausas.
+
+### 11.8 Dosis de distancia
+
+Siguiendo a Titze, Švec y Popolo (2003, *JSLHR* 46:919-932), la dosis de distancia vibratoria estima la distancia total recorrida por los pliegues vocales en su trayectoria oscilatoria. Es otra forma de expresar la dosis, sensible a la vez a `F0` y a la intensidad:
+
+```text
+D_d = 4 * ∫ k_v * A * F0 dt                          (m)          ec. 22
+A    = 0.05 * L0 * [(P_L - P_th) / P_th]^(1/2)       (m)          ec. 14
+P_th = 0.14 + 0.06 * (F0 / F0N)^2                    (kPa)        ec. 15
+P_L  = P_th + 10^((SPL_0.5m - 78.5) / 27.3)          (kPa)        ec. 16
+```
+
+Con `k_v = Phi_k` y la forma discreta `D_d,k = D_d,k-1 + 4 * Phi_k * A_k * F0_k * Delta_t`. Los parámetros dependen del perfil del modelo:
+
+| Perfil | `L0` | `F0N` |
+|---|---|---|
+| Masculino | 16 mm | 120 Hz |
+| Femenino | 10 mm | 190 Hz |
+
+`A`, `P_th` y `P_L` son reglas empíricas del trabajo citado (amplitud medida en laringes caninas extirpadas; umbral y presión pulmonar de Titze y Sundberg, 1992). No son mediciones del participante.
+
+**Referencia del SPL.** La ecuación 16 usa el SPL a 0,5 m de la boca. El micrófono de diadema mide mucho más cerca, por lo que se resta una diferencia `SPL_mic - SPL_0.5m`:
+
+- **medida** (preferida, como en el trabajo citado): se graba una vocal sostenida a la vez con el micrófono de diadema y con un sonómetro a 50 cm, y se ingresa la diferencia en dB;
+- **estimada por distancia** (aproximación): `20 * log10(0,5 / r)`, con `r` la distancia boca-micrófono en metros. Supone propagación esférica desde una fuente puntual, lo que no se cumple bien cerca de la boca, así que el resultado debe rotularse como aproximado.
+
+`D_d` solo se calcula en sesiones con calibración acústica (§5.1) y con un perfil elegido. Pedirla en una sesión sin calibrar es un error explícito; nunca se ignora en silencio. El trabajo citado menciona, como punto de partida tomado de la vibración transmitida a la mano, un límite de unos 520 m; no es un límite validado para los pliegues vocales y la aplicación no lo usa como zona ni umbral.
 
 ## 12. Interfaz
 
@@ -412,6 +439,7 @@ La pantalla funcional incluye:
 - silencio;
 - estado `H`;
 - valores de los cinco modelos;
+- dosis de distancia, con perfil y referencia del SPL a 50 cm;
 - gráfico temporal;
 - zonas provisionales;
 - exportación CSV.
@@ -445,9 +473,10 @@ La aplicación exporta un archivo CSV por trama. Debe incluir, como mínimo:
 - parámetros usados;
 - dosis de tiempo (`d_t`);
 - dosis de ciclos (`d_c`);
-- presión eficaz en Pa (`pressure_pa`) y nivel en dB SPL (`spl_db`), vacíos si la sesión no está calibrada.
+- presión eficaz en Pa (`pressure_pa`) y nivel en dB SPL (`spl_db`), vacíos si la sesión no está calibrada;
+- dosis de distancia en metros (`d_d`), vacía si no se calcula (§11.8).
 
-Con calibración, los parámetros incluyen `calRefDbSpl` y `calCoefficient`. Tras la verificación posterior se agregan `calPostCoefficient`, `calDriftPct`, `calDriftDb` y `calWithinTolerance`; al exportar, estos valores se escriben en todas las filas de la sesión.
+Con dosis de distancia, los parámetros incluyen `ddProfile`, `ddOffsetDb`, `ddOffsetSource` (`measured` o `inverse_distance`) y, si corresponde, `ddMouthDistanceM`. Con calibración, los parámetros incluyen `calRefDbSpl` y `calCoefficient`. Tras la verificación posterior se agregan `calPostCoefficient`, `calDriftPct`, `calDriftDb` y `calWithinTolerance`; al exportar, estos valores se escriben en todas las filas de la sesión.
 
 Las columnas nuevas se agregan al final para no alterar la posición de las existentes.
 
@@ -577,4 +606,4 @@ La salida correcta es un índice experimental de carga vocal calculada. No debe 
 | Documento 1.0 | 2026-11-04 | Especificación integral del sistema v0.3 |
 | 0.3.1 | 2026-11-13 | Anclaje común `f(H*) = f*` ligado a `beta` y dosis convencionales de tiempo y de ciclos |
 | 0.3.2 | 2026-11-13 | Filtro pasa-altos de 50 Hz en la entrada; corte registrado en los parámetros exportados |
-| 0.4.0 | 2026-11-13 | Calibración acústica con tono de referencia, deriva pre/post, presión en Pa y nivel en dB SPL en el CSV, `P_0 = 1 Pa` con calibración |
+| 0.4.0 | 2026-11-18 | Calibración acústica con tono de referencia, deriva pre/post, presión en Pa y nivel en dB SPL en el CSV, `P_0 = 1 Pa` con calibración, y dosis de distancia `D_d` de Titze, Švec y Popolo (2003) |

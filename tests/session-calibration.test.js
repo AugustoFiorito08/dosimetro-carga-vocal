@@ -128,6 +128,34 @@ describe('acoustic calibration in the session flow', () => {
     assert.equal(ctx.session.acousticCalibration, good);
   });
 
+  it('a calibrated session with distance-dose options exports d_d and records them', async () => {
+    const ctx = newSession();
+    await calibrateWithTone(ctx, 0.1);
+    await prepare(ctx);
+    ctx.session.setDistanceDoseOptions({ profile: 'male', mouthDistanceM: 0.05 });
+    const load = ctx.session.start();
+    assert.equal(load.distanceDose, 0);
+    ctx.send(voice, 3);
+    ctx.session.stop();
+    const rows = rowsOf(ctx.session);
+    const doses = rows.map((r) => Number(col(r, 'd_d')));
+    assert.ok(doses[0] > 0 && doses[1] > doses[0] && doses[2] > doses[1], JSON.stringify(doses));
+    assert.equal(doses[2], Number(ctx.session.load.distanceDose.toPrecision(10)));
+    assert.match(col(rows[0], 'parameters'), /;ddProfile=male;ddOffsetDb=20;ddOffsetSource=inverse_distance;ddMouthDistanceM=0\.05;/);
+  });
+
+  it('distance-dose options: validated when set, cleared with null, and refused without calibration', async () => {
+    const ctx = newSession();
+    assert.throws(() => ctx.session.setDistanceDoseOptions({ profile: 'child', mouthDistanceM: 0.05 }), RangeError);
+    await prepare(ctx);
+    ctx.session.setDistanceDoseOptions({ profile: 'female', spl50cmOffsetDb: 18 });
+    assert.deepEqual(ctx.session.distanceDoseOptions, { profile: 'female', offsetDb: 18, offsetSource: 'measured' });
+    assert.throws(() => ctx.session.start(), /calibrat/);
+    assert.equal(ctx.session.mode, MODES.IDLE);
+    ctx.session.setDistanceDoseOptions(null);
+    assert.equal(ctx.session.start().distanceDose, null);
+  });
+
   it('rejects an unknown phase', async () => {
     await assert.rejects(newSession().session.calibrateAcoustic({ phase: 'mid' }), /phase/);
   });

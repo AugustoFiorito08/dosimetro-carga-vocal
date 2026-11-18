@@ -4,6 +4,7 @@ import { acceptedPhonation } from './math/acceptance.js';
 import { conventionalDoseIncrements, createConventionalDoses } from './math/conventional-doses.js';
 import { acousticLoadUnits, normalizedAcousticLoad } from './math/acoustic-load.js';
 import { DOSE_MODELS, doseIncrements, resolveModelParams } from './math/dose-models.js';
+import { distanceDoseIncrement, resolveDistanceDoseOptions, splAtMicrophone } from './math/distance-dose.js';
 import { halfLife, timeConstant, updateLoadState } from './math/load-state.js';
 import { createUsageMetrics, updateUsageMetrics } from './math/usage-metrics.js';
 import { assertFiniteNonNegative, assertFinitePositive } from './math/validation.js';
@@ -12,6 +13,7 @@ export * from './math/acceptance.js';
 export * from './math/acoustic-load.js';
 export * from './math/conventional-doses.js';
 export * from './math/dose-models.js';
+export * from './math/distance-dose.js';
 export * from './math/load-state.js';
 export * from './math/usage-metrics.js';
 
@@ -20,10 +22,15 @@ export * from './math/usage-metrics.js';
  * @param {object} [options.params] dose-model parameter overrides (see DEFAULT_MODEL_PARAMS)
  * @param {number} [options.referencePressure=1] P_0
  * @param {boolean} [options.calibrated=false] whether P_k is calibrated pressure (Pa)
+ * @param {object} [options.distanceDose] distance-dose options (see resolveDistanceDoseOptions); needs calibration
  */
-export function createVocalLoadState({ params, referencePressure = 1, calibrated = false } = {}) {
+export function createVocalLoadState({ params, referencePressure = 1, calibrated = false, distanceDose } = {}) {
   assertFinitePositive('P_0', referencePressure);
   const resolved = resolveModelParams(params);
+  if (distanceDose !== undefined && distanceDose !== null && calibrated !== true) {
+    throw new RangeError('the distance dose needs a calibrated session (SPL in dB)');
+  }
+  const distanceDoseOptions = distanceDose ? resolveDistanceDoseOptions(distanceDose) : null;
   return {
     params: resolved,
     referencePressure,
@@ -34,6 +41,8 @@ export function createVocalLoadState({ params, referencePressure = 1, calibrated
     h: 0,
     doses: Object.fromEntries(DOSE_MODELS.map((m) => [m, 0])),
     conventionalDoses: createConventionalDoses(),
+    distanceDoseOptions,
+    distanceDose: distanceDoseOptions ? 0 : null,
     metrics: createUsageMetrics(),
   };
 }
@@ -63,12 +72,21 @@ export function stepVocalLoad(state, frame) {
     time: state.conventionalDoses.time + conventional.time,
     cycle: state.conventionalDoses.cycle + conventional.cycle,
   };
+  const distanceDose =
+    state.distanceDoseOptions === null
+      ? null
+      : state.distanceDose +
+        distanceDoseIncrement(
+          { f0: frame.f0, splMic: phi === 1 ? splAtMicrophone(frame.pressure) : -Infinity, phi, dt },
+          state.distanceDoseOptions,
+        );
   return {
     ...state,
     frameIndex: state.frameIndex + 1,
     h,
     doses,
     conventionalDoses,
+    distanceDose,
     metrics: updateUsageMetrics(state.metrics, { phi, dt, category: frame.category }),
     lastFrame: { phi, intensity, increments },
   };

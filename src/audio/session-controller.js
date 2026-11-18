@@ -13,7 +13,7 @@ import {
   serializeCsvRow,
   serializeParameters,
 } from '../export/csv-exporter.js';
-import { createVocalLoadState, stepVocalLoad } from '../vocal-load.js';
+import { createVocalLoadState, resolveDistanceDoseOptions, stepVocalLoad } from '../vocal-load.js';
 
 export const MODES = Object.freeze({
   IDLE: 'idle',
@@ -68,6 +68,8 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
   let postCalibration = null;
   let drift = null;
   let recordedParameters = null; // parameters cell as serialised in the records, rewritten at export
+  let distanceDoseInput = null; // options for the distance dose, applied at the next start()
+  let distanceDoseOptions = null; // the same, resolved
   const stats = {
     framesReceived: 0,
     framesProcessed: 0,
@@ -195,9 +197,21 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     similarityThreshold = value;
   }
 
+  /**
+   * Distance dose (Titze, Švec & Popolo, 2003) for the next start(); null disables it.
+   * @param {{ profile: 'male' | 'female', spl50cmOffsetDb?: number, mouthDistanceM?: number } | null} options
+   */
+  function setDistanceDoseOptions(options) {
+    distanceDoseOptions = options === null ? null : resolveDistanceDoseOptions(options);
+    distanceDoseInput = options === null ? null : { ...options };
+  }
+
   function start() {
     if (mode !== MODES.IDLE) throw new Error(`cannot start measuring while ${mode}`);
     if (profile === null) throw new Error('enrol the speaker before starting a session');
+    if (distanceDoseOptions !== null && acousticCalibration === null) {
+      throw new Error('the distance dose needs an acoustic calibration first');
+    }
     const identity = {
       ...classifierConfig?.identity,
       acceptThreshold: similarityThreshold,
@@ -211,7 +225,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     classifier = createFrameClassifier({ profile, config: { ...classifierConfig, identity, ...calibration }, noiseFloorRms });
     load = createVocalLoadState(
       calibrated
-        ? { referencePressure: cfg.calibratedReferencePressure, ...loadOptions, calibrated: true }
+        ? { referencePressure: cfg.calibratedReferencePressure, ...loadOptions, calibrated: true, distanceDose: distanceDoseInput ?? undefined }
         : loadOptions,
     );
     const { pitch, quality, identity: id, noisePeriodicityMax, minVocalBandRatio } = classifier.config;
@@ -236,6 +250,10 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
         noisePeriodicityMax,
         minVocalBandRatio,
         highPassHz: highPass.cutoffHz,
+        ddProfile: distanceDoseOptions?.profile,
+        ddOffsetDb: distanceDoseOptions?.offsetDb,
+        ddOffsetSource: distanceDoseOptions?.offsetSource,
+        ddMouthDistanceM: distanceDoseOptions?.mouthDistanceM,
         calRefDbSpl: sessionCalibration?.referenceDbSpl,
         calCoefficient: sessionCalibration?.coefficient,
       }),
@@ -324,6 +342,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     stop,
     exportCsv,
     setSimilarityThreshold,
+    setDistanceDoseOptions,
     subscribe(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);
@@ -335,6 +354,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     get sessionCalibration() { return sessionCalibration; },
     get postCalibration() { return postCalibration; },
     get calibrationDrift() { return drift; },
+    get distanceDoseOptions() { return distanceDoseOptions; },
     get profile() { return profile; },
     get load() { return load; },
     get latest() { return latest; },

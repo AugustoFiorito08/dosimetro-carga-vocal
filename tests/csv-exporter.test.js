@@ -58,9 +58,9 @@ describe('CSV header (spec §13)', () => {
       csvHeader(),
       'timestamp,frame_duration,f0,level,snr,periodicity,speaker_score,decision_v,decision_w,decision_q,' +
         'phi_k,final_category,rejection_reason,h_k,d_0,d_l,d_p,d_e,d_s,algorithm_version,parameters,d_t,d_c,' +
-        'pressure_pa,spl_db',
+        'pressure_pa,spl_db,d_d',
     );
-    assert.equal(CSV_COLUMNS.length, 25);
+    assert.equal(CSV_COLUMNS.length, 26);
     assert.ok(Object.isFrozen(CSV_COLUMNS));
   });
 });
@@ -88,6 +88,12 @@ describe('formatFrameRow', () => {
     assert.deepEqual([column(relative, 'pressure_pa'), column(relative, 'spl_db')], ['', '']);
     const silent = formatFrameRow({ ...frame, pressure: 0 }, { ...load, units: 'calibrated' });
     assert.deepEqual([column(silent, 'pressure_pa'), column(silent, 'spl_db')], ['', '']);
+  });
+
+  it('d_d holds the distance dose in m and stays empty when it is not computed', () => {
+    assert.equal(column(formatFrameRow(attributed, { ...load, distanceDose: 12.5 }), 'd_d'), '12.5');
+    assert.equal(column(formatFrameRow(attributed, { ...load, distanceDose: null }), 'd_d'), '');
+    assert.equal(column(formatFrameRow(attributed, load), 'd_d'), '');
   });
 
   it('silence: empty F0 / score, decisions 0, reason below_gate', () => {

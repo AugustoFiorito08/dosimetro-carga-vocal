@@ -12,7 +12,13 @@ Branch: `feat/calibracion-acustica` · Delivery: single PR, one commit per task 
 - **S5** Export. Append `pressure_pa` and `spl_db` (empty when uncalibrated). The `parameters` column records `calRefDbSpl` and `calCoefficient`, plus `calPostCoefficient`, `calDriftPct`, `calDriftDb` and `calWithinTolerance` once the post calibration is done, so they also reach rows recorded before it.
 - **S6** UI. Reference level input and buttons for the pre calibration and the post check; show `C_mic`, the drift and a warning when it is out of tolerance; the level KPI shows dB SPL when calibrated.
 - **S7** Specification and version: document §5, §10, §13 and §16; algorithm version 0.4.0.
-- **S8** Distance dose `D_d`. Requires the empirical vibration-amplitude formula of Titze, Švec & Popolo (2003). **Blocked**: the source could not be retrieved (HTTP 403) and the formula will not be written from memory.
+- **S8** Distance dose `D_d`, "como lo expresa este documento" (Titze, Švec & Popolo, 2003, JSLHR 46:919-932), "como otra manera de ver la dosis":
+  - eq. 22: `D_d = 4 ∫ k_v · A · F0 dt` (m);
+  - eq. 14: `A = 0.05 · L0 · [(P_L − P_th) / P_th]^(1/2)` (m), `L0` = 16 mm (male) / 10 mm (female);
+  - eq. 15: `P_th = 0.14 + 0.06 · (F0 / F0N)^2` (kPa), `F0N` = 120 Hz (male) / 190 Hz (female);
+  - eq. 16: `P_L = P_th + 10^((SPL − 78.5) / 27.3)` (kPa), with SPL in dB at 0.5 m from the mouth.
+  - `k_v` is `Phi_k`. Requires a calibrated session and a model profile (male/female). The SPL at the microphone is converted to 0.5 m with an offset `SPL_mic − SPL_0.5m` that is either measured (paper method: sustained vowel recorded by the head-mounted mic and a sound level meter at 50 cm) or approximated from the mouth-microphone distance by inverse-distance spreading (assumption, flagged as approximate). Without calibration or profile, `D_d` is not computed; requesting it on an uncalibrated session is an error, never silently ignored.
+  - Export `d_d` (m) as a new last CSV column, record the profile and the offset in `parameters`, and show `D_d` in the panel.
 
 ## Tasks
 
@@ -22,7 +28,7 @@ Branch: `feat/calibracion-acustica` · Delivery: single PR, one commit per task 
 | T2 | S3, S4, S5 | inline | done | 6859e89 · RED: 8/8 session tests; GREEN: suite 162/162; differential: uncalibrated CSV identical plus two empty cells |
 | T3 | S6 | inline | done | bd76dc5 · browser check: renders, controls disabled without audio, no console errors, no horizontal overflow; live mic flow not testable here |
 | T4 | S7 | inline | done | this commit · RED: version assertion; GREEN: suite 162/162 |
-| T5 | S8 | — | blocked (source) | |
+| T5 | S8 | inline | done | this commit · RED: missing module, CSV header, 2 session tests; GREEN: suite 176/176; differential: with D_d off, calibrated and uncalibrated CSV identical plus one empty cell; browser: panel renders at 355 px, no console errors |
 
 ## Log
 
@@ -34,3 +40,6 @@ Branch: `feat/calibracion-acustica` · Delivery: single PR, one commit per task 
 - **L6** Routing: every task inline (no writer trigger: dependent units, each about 100 lines or less).
 - **L7** T1-T4 done; suite 162/162. Differential check: an uncalibrated session exports the same rows as before plus two empty cells. Browser check of the panel passed; the live microphone flow could not be exercised in the preview browser.
 - **L8** Next step: T5 (distance dose) once the user supplies Titze, Švec & Popolo (2003); then push and open the PR.
+- **L9** (2026-11-18, user): "este es el documento que faltaba para la dosis de distancia. Agrega esta mejora que me solicitabas. Es para que pongas una dosis de distancia como lo expresa este documento. Servirá como otra manera de ver la dosis."
+- **L10** Equations 14-16 and 22 read from the PDF pages 6-8 (images). The paper's SPL is at 50 cm; their head-mounted mic (about 5 cm) was referred to 50 cm through a sustained vowel recorded simultaneously by a sound level meter at 50 cm, not by a distance law. Both routes are supported; the measured one is preferred. PR #3 is still open, so T5 joins it under version 0.4.0.
+- **L11** T5 done: `src/math/distance-dose.js` (eqs. 14, 15, 16 and 22), engine `distanceDose`, session `setDistanceDoseOptions`, CSV `d_d`, panel controls and KPI, spec §11.8, §12, §13 and §22. The 520 m figure is documented as context only and not used as a threshold. The live microphone flow is still untested.

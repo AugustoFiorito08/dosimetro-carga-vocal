@@ -52,6 +52,7 @@ const $ = (id) => document.getElementById(id);
 const el = Object.fromEntries(
   [
     'device', 'connect', 'device-info', 'cal-ref', 'cal-pre', 'cal-post', 'cal-status', 'cal-drift', 'step-acoustic',
+    'dd-profile', 'dd-method', 'dd-value', 'dd-unit', 'dd-status', 'step-distance', 'kpi-distance',
     'calibrate', 'enroll', 'threshold', 'threshold-value',
     'noise-floor', 'enrolment', 'step-calibrate', 'step-enroll', 'progress', 'progress-label',
     'progress-value', 'progress-bar', 'message', 'start', 'pause', 'resume', 'finish', 'export',
@@ -189,9 +190,25 @@ el.enroll.addEventListener('click', () =>
   runTask('Enrolamiento', () => manager.session.enroll(), (p) => `Perfil creado con ${p.prototypes.length} prototipos. Ya podés iniciar.`),
 );
 
+function distanceDoseOptionsFromForm() {
+  const profile = el['dd-profile'].value;
+  if (!profile) return null;
+  const value = Number(el['dd-value'].value);
+  return el['dd-method'].value === 'measured'
+    ? { profile, spl50cmOffsetDb: value }
+    : { profile, mouthDistanceM: value / 100 };
+}
+
+el['dd-method'].addEventListener('change', () => {
+  const measured = el['dd-method'].value === 'measured';
+  setText(el['dd-unit'], measured ? 'dB' : 'cm');
+  el['dd-value'].value = measured ? '20' : '5';
+});
+
 // ---------- session controls ----------
 el.start.addEventListener('click', () => {
   try {
+    manager.session.setDistanceDoseOptions(distanceDoseOptionsFromForm());
     const load = manager.session.start();
     chart.reset({ beta: load.params.beta });
     sessionStartedAt = new Date();
@@ -230,6 +247,10 @@ function renderControls(session) {
   el['cal-ref'].disabled = !idle;
   el['cal-pre'].disabled = !idle;
   el['cal-post'].disabled = !idle || !session?.sessionCalibration || !session.recordCount;
+  const ddOn = Boolean(el['dd-profile'].value);
+  el['dd-profile'].disabled = !idle;
+  el['dd-method'].disabled = !idle || !ddOn;
+  el['dd-value'].disabled = !idle || !ddOn;
   el.enroll.disabled = !idle || session.noiseFloorRms === null;
   el.threshold.disabled = mode === MODES.MEASURING || mode === MODES.PAUSED;
   el.start.disabled = !idle || session.profile === null;
@@ -250,6 +271,8 @@ function renderControls(session) {
       setText(el['cal-drift'], `Deriva post: ${fixed(drift.db, 2)} dB (${fixed(drift.percent, 1)} %) · tolerancia ±${drift.toleranceDb} dB`);
       setAttr(el['cal-drift'], 'data-alert', String(!drift.withinTolerance));
     }
+    setText(el['dd-status'], !ddOn ? 'Desactivada' : cal ? 'Lista' : 'Falta calibrar');
+    setAttr(el['step-distance'], 'data-done', String(ddOn && cal !== null));
     setText(el['noise-floor'], session.noiseFloorRms === null ? 'Sin medir' : `${fixed(toDb(session.noiseFloorRms), 1)} dBFS`);
     setAttr(el['step-calibrate'], 'data-done', String(session.noiseFloorRms !== null));
     setText(el.enrolment, session.profile ? `${session.profile.prototypes.length} prototipos` : 'Sin perfil');
@@ -294,6 +317,7 @@ function renderLive(session) {
   setText(el['kpi-nonphonation-time'], duration(m.nonPhonationTime));
   setText(el['kpi-total-time'], duration(m.totalTime));
   setText(el['kpi-episodes'], String(m.episodes.count));
+  setText(el['kpi-distance'], fixed(load.distanceDose, 2));
   setText(el['kpi-pause'], m.pauses.count ? fixed(meanDuration(m.pauses), 1) : '—');
   setText(el['kpi-h'], fixed(load.h, 1));
   setText(el['kpi-zone'], zoneFor(load.h, load.params.beta).label.toLowerCase());

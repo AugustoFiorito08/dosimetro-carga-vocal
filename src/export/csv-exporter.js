@@ -30,6 +30,7 @@ export const CSV_COLUMNS = Object.freeze([
   'd_c',
   'pressure_pa',
   'spl_db',
+  'd_d',
 ]);
 
 const LINE_BREAK = '\r\n';
@@ -70,7 +71,8 @@ export function serializeParameters(parameters = {}) {
 /**
  * Formats one frame as the cells of CSV_COLUMNS.
  * @param {object} analysis classifyFrame() analysis record
- * @param {{ h?: number, doses?: object, conventionalDoses?: object } | null} state vocal-load state after the frame
+ * @param {{ h?: number, doses?: object, conventionalDoses?: object, distanceDose?: number | null } | null} state
+ *   vocal-load state after the frame
  * @param {{ algorithmVersion?: string, parameters?: string | object, timestamp?: number }} [sessionParams]
  * @returns {string[]}
  */
@@ -107,6 +109,7 @@ export function formatFrameRow(analysis = {}, state = null, sessionParams = {}) 
     conventional.cycle,
     pressurePa,
     pressurePa === null ? null : splFromPressure(pressurePa),
+    state?.distanceDose,
   ].map(formatCell);
 }
 
