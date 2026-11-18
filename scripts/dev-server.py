@@ -6,7 +6,11 @@ stale ES modules after an update. Here:
 - every response carries `Cache-Control: no-store`, so nothing new is cached;
 - HTML pages also carry `Clear-Site-Data: "cache"`, so opening the page wipes
   whatever an older server left in this origin's cache (localhost counts as a
-  secure context, so Chrome honours it).
+  secure context, so Chrome honours it);
+- only the app is served: `/` redirects to the app, files under `/public/` and
+  `/src/` are allowed, and everything else (including `.git/`, `.claude/` and
+  directory listings) answers 404. This matters when the port is shared through
+  a tunnel, where anyone with the link could otherwise read the repository.
 
 Usage: python3 scripts/dev-server.py [port] [--directory DIR]
 """
@@ -15,9 +19,43 @@ import argparse
 import functools
 import http.server
 import pathlib
+import posixpath
+import urllib.parse
+
+APP_PATH = "/public/index.html"
+ALLOWED_PREFIXES = ("/public/", "/src/")
+
+
+def is_allowed(raw_path):
+    """True for files of the app; the path is decoded and normalized first."""
+    path = posixpath.normpath(urllib.parse.unquote(raw_path.split("?", 1)[0].split("#", 1)[0]))
+    if any(part.startswith(".") for part in path.split("/") if part):
+        return False
+    return path.startswith(ALLOWED_PREFIXES) and not path.endswith("/")
 
 
 class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.split("?", 1)[0] in ("/", "/public", "/public/"):
+            self.send_response(302)
+            self.send_header("Location", APP_PATH)
+            self.end_headers()
+            return
+        if not is_allowed(self.path):
+            self.send_error(404, "Not found")
+            return
+        super().do_GET()
+
+    def do_HEAD(self):
+        if not is_allowed(self.path):
+            self.send_error(404, "Not found")
+            return
+        super().do_HEAD()
+
+    def list_directory(self, path):
+        self.send_error(404, "Not found")
+        return None
+
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
         path = self.path.split("?", 1)[0]
