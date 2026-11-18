@@ -42,6 +42,12 @@ describe('simulated workdays', () => {
     }
   });
 
+  it('cases (VAS change >= 20) are a minority, not almost every workday', () => {
+    const rows = days.filter((w) => w.fatigue.post !== null && w.fatigue.pre !== null);
+    const share = rows.filter((w) => w.fatigue.post - w.fatigue.pre >= 20).length / rows.length;
+    assert.ok(share > 0.15 && share < 0.5, `share = ${share}`);
+  });
+
   it('some VAS values are missing, as in real fieldwork', () => {
     assert.ok(days.some((w) => w.fatigue.post === null));
     assert.ok(days.filter((w) => w.fatigue.post !== null).length > days.length * 0.8);

@@ -91,8 +91,10 @@ export function generateDemoWorkdays({ seed = 2026, schools = 3, classroomsPerSc
         if (burstiness > 0.6) events.push({ t: Math.floor(rand() * durationS), type: 'fonacion_sostenida', source: 'algoritmo' });
         events.sort((a, b) => a.t - b.t);
         const pre = clamp(Math.round(14 + 8 * t.susceptibility + 7 * normal()), 0, 100);
-        const load = Math.log(none / 2000) + 0.4 * t.susceptibility; // H0: no memory effect
-        const post = clamp(Math.round(pre + 14 * load + 10 * normal()), 0, 100);
+        // H0: no memory effect. Centred on a typical D_0 so that about a third of workdays
+        // rise 20 points or more on the VAS.
+        const change = 14 + 14 * Math.log(none / 35000) + 5 * t.susceptibility + 10 * normal();
+        const post = clamp(Math.round(pre + change), 0, 100);
         out.push({
           schema: WORKDAY_SCHEMA,
           id: workdayId(startedAt, t.participantId),
