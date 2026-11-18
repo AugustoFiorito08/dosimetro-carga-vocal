@@ -1,8 +1,12 @@
 """Local static server for the dosimeter that disables browser caching.
 
 `python3 -m http.server` only sends Last-Modified, so browsers may keep running
-stale ES modules after an update. Every response here carries
-`Cache-Control: no-store`, so a plain reload always loads the current code.
+stale ES modules after an update. Here:
+
+- every response carries `Cache-Control: no-store`, so nothing new is cached;
+- HTML pages also carry `Clear-Site-Data: "cache"`, so opening the page wipes
+  whatever an older server left in this origin's cache (localhost counts as a
+  secure context, so Chrome honours it).
 
 Usage: python3 scripts/dev-server.py [port] [--directory DIR]
 """
@@ -16,6 +20,9 @@ import pathlib
 class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
+        path = self.path.split("?", 1)[0]
+        if path.endswith((".html", "/")):
+            self.send_header("Clear-Site-Data", '"cache"')
         super().end_headers()
 
 

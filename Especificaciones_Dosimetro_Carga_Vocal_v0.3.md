@@ -511,7 +511,7 @@ La conservación de scores continuos permite recalcular decisiones con nuevos um
 npm start
 ```
 
-o, sin npm, `python3 scripts/dev-server.py 8080`. El servidor envía `Cache-Control: no-store` para que el navegador no siga ejecutando módulos JavaScript viejos después de una actualización (con `python3 -m http.server` puede ocurrir).
+o, sin npm, `python3 scripts/dev-server.py 8080`. El servidor envía `Cache-Control: no-store` para que el navegador no siga ejecutando módulos JavaScript viejos después de una actualización (con `python3 -m http.server` puede ocurrir). Las páginas HTML incluyen además `Clear-Site-Data: "cache"`, así que al abrir la aplicación se descarta lo que haya quedado en caché de un servidor anterior, sin que el usuario tenga que forzar la recarga.
 
 4. Abrir en Chrome o Edge:
 
