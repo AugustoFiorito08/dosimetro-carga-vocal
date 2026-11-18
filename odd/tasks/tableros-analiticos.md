@@ -22,14 +22,14 @@ Branch: `feat/tableros-analiticos`, stacked on `feat/partitura-vocal` · Deliver
 
 | ID | Specs | Route | Status | Evidence |
 |---|---|---|---|---|
-| T1 | S3, S4 | inline | pending | |
-| T2 | S5 | inline | pending | |
-| T3 | S6 | inline | pending | |
-| T4 | S7 | inline | pending | |
-| T5 | S8 | inline | pending | |
-| T6 | S9 | inline | pending | |
-| T7 | S10, S11 | inline | pending | |
-| T8 | docs | inline | pending | |
+| T1 | S3, S4 | inline | done | 114bcd0 · RED: missing modules; GREEN: suite 205/205 (an F0 median expectation was corrected after independent check) |
+| T2 | S5 | inline | done | 0d3db16 · 6 tests (first five written with the code); the H0 test fails on the biased first draft (r = 0.12) and passes on the fix |
+| T3 | S6 | inline | done | 2a87a14 · RED: missing module; 13 tests vs textbook/Python references; two test bugs of mine fixed (Youden J, separable data) and Cornish-Fisher replaced by the exact t after a 3.159 vs 3.182 miss; demo ROC under H0: AUC 0.816-0.823 for the five models. 00c33f9: demo prevalence 87 % -> 39 % |
+| T4 | S7 | inline | done | bb849cb auto-events (5 tests) · 912f5c4 form · browser: codes, pre-VAS, event at 6 s, post-VAS, save, record shown in Mi jornada |
+| T5 | S8 | inline | done | a747a93 · views smoke tests with demo data (no NaN/undefined) |
+| T6 | S9 | inline | done | 92ab566 aggregates (10 tests, minimum group 3) · a747a93 view |
+| T7 | S10, S11 | inline | done | 42d36fd charts (7 tests) · 2afdc28 axis fix found in the browser · a747a93 view |
+| T8 | docs | inline | done | spec §12.2-§12.5 and §14 |
 
 ## Log
 
@@ -37,3 +37,5 @@ Branch: `feat/tableros-analiticos`, stacked on `feat/partitura-vocal` · Deliver
 - **L2** (2026-11-18, user choice): "Datos reales + demo (Recommended)".
 - **L3** Protocol check: the primary outcome is perceived fatigue/effort on a 0-100 VAS (§16.1); ROC/AUC per model are planned when a dichotomous outcome exists, and the minimum relevant change must be fixed before analysing D_k. Hence the configurable, provisional case threshold. The reference images name teachers; the protocol uses codes (ID_DOC) and data minimization, so the app shows codes only.
 - **L4** Routing: inline (the session rules forbid spawning agents unless the user asks).
+- **L5** Browser check (synthetic input, timer-driven render): the three tabs render with demo data (772 workdays) without errors or NaN; real-data empty states explain what to do; the live flow saved a workday that appeared in Mi jornada; the test record was deleted afterwards. A screenshot showed bars overflowing the participation chart: `ticks()` stopped below the maximum (fixed with a test). Suite 253/253.
+- **L6** Lessons recorded: two expectations of mine were wrong and were corrected only after independent checks (F0 median 184, Youden J 0.75); the first demo favoured D_E through burstiness and now follows H0 with a test that fails on the biased version; the first demo prevalence was 87 % and is now 39 %.
