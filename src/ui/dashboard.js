@@ -37,6 +37,7 @@ const REASON_LABELS = {
   weak_periodicity: 'Periodicidad insuficiente',
   low_snr: 'SNR insuficiente',
   speaker_mismatch: 'No coincide con el perfil',
+  f0_out_of_range: 'Tono fuera del rango enrolado',
   no_profile: 'Sin perfil enrolado',
 };
 const MODE_LABELS = {
@@ -341,7 +342,9 @@ el.enroll.addEventListener('click', () =>
     if (quality !== null && quality < LOW_PROFILE_QUALITY) {
       return `Perfil creado, pero reconoce solo el ${percent(quality)} de tu voz de prueba. Conviene repetir el enrolamiento: 15 s continuos, primero voz normal y después en voz alta.`;
     }
-    return `Perfil creado${quality === null ? '' : `: reconoce el ${percent(quality)} de tu voz de prueba`}. Ya podés iniciar.`;
+    const range = manager.session.profile?.f0Range;
+    const f0 = range ? ` Tu tono: ${Math.round(range.low)}-${Math.round(range.high)} Hz.` : '';
+    return `Perfil creado${quality === null ? '' : `: reconoce el ${percent(quality)} de tu voz de prueba`}.${f0} Ya podés iniciar.`;
   }),
 );
 

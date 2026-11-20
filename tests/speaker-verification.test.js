@@ -28,7 +28,10 @@ const enrolment = [
   ...voicedFrames(speak(SPEAKERS.target, 8, SAMPLE_RATE, 1), null),
   ...voicedFrames(speak(SPEAKERS.target, 7, SAMPLE_RATE, 2, { f0Factor: 1.3 }), null),
 ];
-const profile = enrollProfile(enrolment.map((a) => a.features), { frameDuration: FRAME / SAMPLE_RATE });
+const profile = enrollProfile(enrolment.map((a) => a.features), {
+  frameDuration: FRAME / SAMPLE_RATE,
+  f0: enrolment.map((a) => a.f0),
+});
 
 function acceptedShare(speaker, seed, options) {
   const analyses = voicedFrames(speak(speaker, 20, SAMPLE_RATE, seed, options), profile);
@@ -59,7 +62,10 @@ describe('speaker verification with realistic within-speaker variability (±10 %
     ...voicedFrames(speak(SPEAKERS.target, 8, SAMPLE_RATE, 21, { variability }), null),
     ...voicedFrames(speak(SPEAKERS.target, 7, SAMPLE_RATE, 22, { f0Factor: 1.3, variability }), null),
   ];
-  const varProfile = enrollProfile(enrolmentVar.map((a) => a.features), { frameDuration: FRAME / SAMPLE_RATE });
+  const varProfile = enrollProfile(enrolmentVar.map((a) => a.features), {
+    frameDuration: FRAME / SAMPLE_RATE,
+    f0: enrolmentVar.map((a) => a.f0),
+  });
   const share = (speaker, seed, options = {}) => {
     const analyses = voicedFrames(speak(speaker, 20, SAMPLE_RATE, seed, { variability, ...options }), varProfile);
     return analyses.filter((a) => a.W === 1).length / analyses.length;
@@ -84,6 +90,29 @@ describe('speaker verification with realistic within-speaker variability (±10 %
 
   it('rejects a child voice (F0 280 Hz, formants 20 % higher)', () => {
     assert.ok(share({ f0: 280, formantScale: 1.2 }, 35) <= 0.05);
+  });
+});
+
+// Field test (real CSV, 2026-11-20): the enrolled speaker spoke at F0 111-149 Hz and the
+// other voice at 194-453 Hz; the F0 range of the enrolment (normal and raised voice)
+// separates them even where the spectral score overlaps.
+describe('F0 consistency with the enrolment', () => {
+  it('stores the enrolled F0 range (normal and raised voice)', () => {
+    assert.ok(profile.f0Range.low > 150 && profile.f0Range.low < 210, `low ${profile.f0Range.low}`);
+    assert.ok(profile.f0Range.high > 250 && profile.f0Range.high < 330, `high ${profile.f0Range.high}`);
+  });
+
+  it('does not attribute a voice with the same vocal tract far above the enrolled F0', () => {
+    const analyses = voicedFrames(speak(SPEAKERS.target, 10, SAMPLE_RATE, 61, { f0Factor: 2 }), profile);
+    assert.ok(analyses.length > 50);
+    assert.equal(analyses.filter((a) => a.W === 1).length, 0);
+    // Octave errors of the pitch tracker can land in range; the spectral score rejects those.
+    const outOfRange = analyses.filter((a) => a.rejectionReason === 'f0_out_of_range').length;
+    assert.ok(outOfRange > analyses.length / 2, `${outOfRange} of ${analyses.length}`);
+  });
+
+  it('keeps attributing the enrolled voice slightly above the raised enrolment', () => {
+    assert.ok(acceptedShare(SPEAKERS.target, 62, { f0Factor: 1.4 }) >= 0.8);
   });
 });
 

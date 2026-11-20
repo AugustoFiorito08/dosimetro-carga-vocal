@@ -78,7 +78,7 @@ describe('session CSV', () => {
     assert.deepEqual(rows.map((r) => Number(r[0])), [0, dt, 5 * dt]);
     assert.deepEqual(rows.map((r) => r[11]), ['fonacion_atribuida', 'fonacion_atribuida', 'silencio']);
     assert.equal(rows[0][19], '0.5.0');
-    assert.match(rows[0][20], /^sampleRate=16000;beta=.*hStar=300;fStar=2;.*acceptThreshold=0\.75;rejectThreshold=0\.7;/);
+    assert.match(rows[0][20], /^sampleRate=16000;beta=.*hStar=300;fStar=2;.*acceptThreshold=0\.65;rejectThreshold=0\.6;/);
     assert.match(rows[0][20], /;highPassHz=50$/);
     assert.deepEqual(rows.map((r) => Number(r[21])), [dt, 2 * dt, 2 * dt], 'time dose accumulates attributed frames only');
   });
@@ -110,11 +110,11 @@ describe('session CSV', () => {
     assert.ok(quality > 0 && quality <= 1, `quality ${quality}`);
     session.setSimilarityThreshold(0.99);
     assert.ok(session.profileQuality <= quality, 'a stricter threshold cannot accept more');
-    session.setSimilarityThreshold(0.75);
+    session.setSimilarityThreshold(0.65);
     session.start();
     send(voice, 1);
     const row = session.exportCsv().split('\r\n')[1];
-    assert.match(row, /;referenceDistance=[\d.]+;ownAcceptance=[\d.]+;/);
+    assert.match(row, /;referenceDistance=[\d.]+;ownAcceptance=[\d.]+;f0Low=[\d.]+;f0High=[\d.]+;/);
   });
 });
 

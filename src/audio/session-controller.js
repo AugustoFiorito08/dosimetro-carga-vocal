@@ -158,6 +158,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     if (noiseFloorRms === null) return Promise.reject(new Error('calibrate the ambient noise before enrolling'));
     let state = createFrameClassifier({ config: classifierConfig, noiseFloorRms });
     const vectors = [];
+    const f0s = [];
     let validTime = 0;
     let elapsed = 0;
     let frameDuration = 0;
@@ -167,6 +168,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
           maxPrototypes: cfg.maxPrototypes,
           frameDuration,
           minDuration: cfg.enrollMinSeconds,
+          f0: f0s,
         });
         enrolFrameDuration = frameDuration;
         task.resolve(profile);
@@ -181,6 +183,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
       frameDuration = dt;
       if (result.analysis.V === 1 && result.analysis.Q === 1) {
         vectors.push(result.analysis.features);
+        f0s.push(result.analysis.f0);
         validTime += dt;
       }
       latest = { analysis: result.analysis, load: null };
@@ -263,6 +266,8 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
         smoothing: id.smoothing,
         referenceDistance: profile.referenceDistance,
         ownAcceptance: profileQuality() ?? undefined,
+        f0Low: profile.f0Range?.low,
+        f0High: profile.f0Range?.high,
         minF0: pitch.minF0,
         maxF0: pitch.maxF0,
         yinThreshold: pitch.threshold,

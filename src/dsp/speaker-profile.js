@@ -32,11 +32,25 @@ const SPREAD_FLOOR_RATIO = 0.1; // of the mean per-dimension spread
 const ABSOLUTE_SPREAD_FLOOR = 1e-6;
 const CLUSTER_VARIANCE_FLOOR = 0.25; // in standardised units
 
-/** Provisional thresholds with hysteresis: validate experimentally (spec §6.4). */
+/**
+ * F0 consistency: a voiced frame is attributed only if its F0 lies within the enrolled
+ * range (2nd-98th percentile of normal and raised voice) widened by these factors, so a
+ * louder voice than the enrolment still counts. Needs at least MIN_F0_FRAMES values.
+ */
+export const F0_MARGIN_UP = 1.25;
+export const F0_MARGIN_DOWN = 1.3;
+const MIN_F0_FRAMES = 20;
+
+/**
+ * Provisional thresholds with hysteresis: validate experimentally (spec §6.4). Set from a
+ * field recording (2026-11-20): the speaker's own frames scored a median of 0.74 and the
+ * other voice 0.48; accepting at 0.75 with slow smoothing attributed only 28 % of the own
+ * voice, 0.65/0.60 with faster smoothing attributes about 90 %.
+ */
 export const DEFAULT_IDENTITY_CONFIG = Object.freeze({
-  smoothing: 0.05, // EMA weight of the newest score (~20 frames, about 0.9 s at 48 kHz)
-  acceptThreshold: 0.75,
-  rejectThreshold: 0.7,
+  smoothing: 0.2, // EMA weight of the newest score (~5 frames, about 0.2 s at 48 kHz)
+  acceptThreshold: 0.65,
+  rejectThreshold: 0.6,
   resetAfterSeconds: 1, // forget the decision after this much time without valid voice
 });
 
@@ -63,18 +77,22 @@ const standardise = (vector, mean, scale) => Float64Array.from(vector, (v, j) =>
  * diagonal variance per cluster. Deterministic: seeded with the frame closest to the
  * mean, then farthest-point initialisation. Empty clusters are dropped.
  * @param {ArrayLike<number>[]} vectors spectral feature vectors of valid voiced frames
- * @param {{ maxPrototypes?: number, iterations?: number, frameDuration?: number, minDuration?: number }} [options]
+ * @param {{ maxPrototypes?: number, iterations?: number, frameDuration?: number, minDuration?: number,
+ *   f0?: (number | null)[] }} [options] `f0` (Hz, one per vector) enables the F0 consistency check
  * @returns {{ dimension: number, mean: Float64Array, scale: Float64Array,
  *   prototypes: Float64Array[], variances: Float64Array[], counts: number[],
- *   referenceDistance: number, heldOutDistances: Float64Array[] }}
+ *   referenceDistance: number, heldOutDistances: Float64Array[], f0Range: { low: number, high: number } | null }}
  */
 export function enrollProfile(vectors, options = {}) {
-  const { maxPrototypes, iterations, frameDuration, minDuration } = { ...DEFAULT_ENROLLMENT_CONFIG, ...options };
+  const { maxPrototypes, iterations, frameDuration, minDuration, f0 } = { ...DEFAULT_ENROLLMENT_CONFIG, ...options };
   if (!Number.isInteger(maxPrototypes) || maxPrototypes < 1) throw new RangeError('maxPrototypes must be an integer >= 1');
   if (vectors.length === 0) throw new RangeError('enrolment requires at least one feature vector');
   const dimension = vectors[0].length;
   if (vectors.some((v) => v.length !== dimension || Array.from(v).some((x) => !Number.isFinite(x)))) {
     throw new RangeError('feature vectors must be finite and share one dimension');
+  }
+  if (f0 !== undefined && f0.length !== vectors.length) {
+    throw new RangeError(`f0 must have one value per feature vector (${f0.length} vs ${vectors.length})`);
   }
   if (frameDuration !== undefined && vectors.length * frameDuration < minDuration) {
     throw new RangeError(`enrolment needs >= ${minDuration} s of valid voice, got ${vectors.length * frameDuration} s`);
@@ -94,7 +112,21 @@ export function enrollProfile(vectors, options = {}) {
   }
   const all = heldOut.flatMap((fold) => Array.from(fold)).sort((x, y) => x - y);
   const referenceDistance = all.length ? Math.max(REFERENCE_DISTANCE_FLOOR, all[Math.floor(all.length / 2)]) : 1;
-  return Object.freeze({ ...model, referenceDistance, heldOutDistances: heldOut });
+  return Object.freeze({ ...model, referenceDistance, heldOutDistances: heldOut, f0Range: f0Range(f0) });
+}
+
+function f0Range(values) {
+  const valid = (values ?? []).filter((v) => Number.isFinite(v) && v > 0).sort((a, b) => a - b);
+  if (valid.length < MIN_F0_FRAMES) return null;
+  const at = (p) => valid[Math.round(p * (valid.length - 1))];
+  return Object.freeze({ low: at(0.02), high: at(0.98) });
+}
+
+/** True when `f0` is compatible with the enrolled range (always true without range or F0). */
+export function f0Consistent(profile, f0) {
+  const range = profile?.f0Range;
+  if (!range || !(f0 > 0)) return true;
+  return f0 <= range.high * F0_MARGIN_UP && f0 >= range.low / F0_MARGIN_DOWN;
 }
 
 function fitModel(vectors, maxPrototypes, iterations) {

@@ -122,8 +122,8 @@ describe('identity smoothing W_k', () => {
   });
 
   it('hysteresis: score between thresholds keeps the previous decision', () => {
-    assert.equal(feed([0.72]).state.W, 0);
-    assert.equal(feed([0.9, 0.72, 0.72, 0.72]).state.W, 1);
+    assert.equal(feed([0.62]).state.W, 0);
+    assert.equal(feed([0.9, 0.62, 0.62, 0.62]).state.W, 1);
   });
 
   it('holds the decision through short gaps and resets after long ones', () => {
