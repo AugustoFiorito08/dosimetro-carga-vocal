@@ -23,7 +23,14 @@ export function analyseAndDiscard(samples, sampleRate, options, { WorkerClass = 
     }
   }
   return new Promise((resolve, reject) => {
-    const worker = new WorkerClass(WORKER_URL, { type: 'module' });
+    let worker;
+    try {
+      worker = new WorkerClass(WORKER_URL, { type: 'module' });
+    } catch (error) {
+      samples.fill(0);
+      reject(error);
+      return;
+    }
     const done = (fn, value) => {
       worker.terminate();
       fn(value);
@@ -33,6 +40,11 @@ export function analyseAndDiscard(samples, sampleRate, options, { WorkerClass = 
       event.preventDefault?.();
       done(reject, new Error(event.message || 'assessment worker failed'));
     };
-    worker.postMessage({ samples, sampleRate, options }, [samples.buffer]);
+    try {
+      worker.postMessage({ samples, sampleRate, options }, [samples.buffer]);
+    } catch (error) {
+      if (samples.length) samples.fill(0); // not transferred: zero the page copy
+      done(reject, error);
+    }
   });
 }

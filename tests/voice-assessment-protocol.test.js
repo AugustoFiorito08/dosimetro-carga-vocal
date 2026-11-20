@@ -67,6 +67,8 @@ describe('assessment state', () => {
     assert.deepEqual(restoreAssessment('{bad', '2026-11-20'), createAssessment('2026-11-20'));
     const leaky = { ...s, PRE: { ...s.PRE, VOWEL: { ...s.PRE.VOWEL, audioRetained: true } } };
     assert.deepEqual(restoreAssessment(JSON.stringify(leaky), '2026-11-20'), createAssessment('2026-11-20'));
+    const smuggled = { ...s, PRE: { ...s.PRE, VOWEL: { ...s.PRE.VOWEL, samples: Array(16000).fill(0.1) } } };
+    assert.deepEqual(restoreAssessment(JSON.stringify(smuggled), '2026-11-20'), createAssessment('2026-11-20'));
   });
 });
 
@@ -88,6 +90,7 @@ describe('assessment in the workday record', () => {
     const a = workdayAssessment(filled());
     assert.throws(() => validateWorkday({ ...base, assessment: { ...a, results: [{ ...a.results[0], audioRetained: true }] } }), /audio/);
     assert.throws(() => validateWorkday({ ...base, assessment: { ...a, results: [{ ...a.results[0], timepoint: 'X' }] } }), RangeError);
+    assert.throws(() => validateWorkday({ ...base, assessment: { ...a, results: [{ ...a.results[0], frames: new Array(5000).fill(0) }] } }), /audio/);
     assert.throws(() => validateWorkday({ ...base, assessment: { ...a, vas: { effort: { pre: 120, post: null } } } }), RangeError);
   });
 });

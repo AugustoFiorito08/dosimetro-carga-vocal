@@ -20,6 +20,20 @@ export const STANDARD_TEXT =
   'Entonces el sol brilló con calor y el viajero, sofocado, se quitó la capa. ' +
   'Así, el viento tuvo que reconocer que el sol era el más fuerte.';
 
+/** Longest array a result may hold: the LTAS bands and the 77-value average cepstrum. */
+export const MAX_DERIVED_VALUES = 100;
+
+const longestArray = (value) => {
+  if (Array.isArray(value) || ArrayBuffer.isView(value)) return Math.max(value.length, ...Array.from(value, longestArray));
+  if (value && typeof value === 'object') return Math.max(0, ...Object.values(value).map(longestArray));
+  return 0;
+};
+
+/** True when a result is not marked audio-free or holds anything long enough to be audio. */
+export function retainsAudio(result) {
+  return result?.audioRetained !== false || longestArray(result) > MAX_DERIVED_VALUES;
+}
+
 const emptyTimepoint = () => ({ vas: Object.fromEntries(VAS_ITEMS.map((k) => [k, null])), VOWEL: null, SPEECH: null });
 
 export function createAssessment(date) {
@@ -43,7 +57,7 @@ export function withVas(state, timepoint, item, value) {
 export function withResult(state, timepoint, result) {
   checkTimepoint(timepoint);
   if (!TASKS.includes(result?.task)) throw new RangeError(`unknown task ${result?.task}`);
-  if (result.audioRetained !== false) throw new RangeError('assessment results must not retain audio');
+  if (retainsAudio(result)) throw new RangeError('assessment results must not retain audio');
   if (result.quality?.status === 'rejected') throw new RangeError('a rejected take is not stored; repeat it');
   return { ...state, [timepoint]: { ...state[timepoint], [result.task]: result } };
 }
@@ -96,7 +110,7 @@ export function restoreAssessment(json, today) {
     if (state?.date !== today || state.textId !== STANDARD_TEXT_ID) return createAssessment(today);
     for (const tp of TIMEPOINTS) {
       if (!state[tp]?.vas) return createAssessment(today);
-      for (const task of TASKS) if (state[tp][task] && state[tp][task].audioRetained !== false) return createAssessment(today);
+      for (const task of TASKS) if (state[tp][task] && retainsAudio(state[tp][task])) return createAssessment(today);
     }
     return state;
   } catch {
