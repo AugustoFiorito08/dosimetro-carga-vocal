@@ -22,7 +22,7 @@ Branches: `feat/evaluacion-acustica-motor` → `feat/evaluacion-acustica-protoco
 |---|---|---|---|---|
 | T1 | S1–S5 | inline | done | engine commit · RED: missing module; GREEN: 18 tests, suite 286/286; 20 s of speech analysed in ~2.5 s on desktop (Praat 2 ms step kept; UI must run it off the main thread) |
 | T2 | S6–S8 | inline | done | protocol commit · tests: recording (3), runner (4), protocol/workday/CSV (9); suite 301/301 · browser: real module Worker transfers the take (page copy detached), 25 s at 48 kHz analysed in ~5 s without blocking the page; VAS, reload persistence, table and export guard checked at desktop and 375 px; live microphone takes not testable here · RED not observed first for these (written alongside) |
-| T3 | S9 | inline | pending | |
+| T3 | S9 | inline | done | perturbation commit · RED: 5/5 failing; GREEN: 5 tests, suite 306/306; synthetic σ=1 % → 0.92 % (44.1 and 48 kHz), σ=5 % shimmer → 4.1 %, clean → 0.00 (each measured cycle mixes two synthetic ones, so about 20 % low) |
 | T4 | S10 | inline | pending | |
 
 ## Log

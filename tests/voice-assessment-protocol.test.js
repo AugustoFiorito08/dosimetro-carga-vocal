@@ -115,6 +115,7 @@ describe('VOICE_ACOUSTIC_ASSESSMENT export', () => {
     assert.ok(Math.abs(Number(vowel.cpps_db) - pre.cpps) < 1e-6);
     assert.equal(vowel.cepstrum_db.split(' ').length, 77);
     assert.equal(vowel.ltas_db.split(' ').length, vowel.ltas_centers_hz.split(' ').length);
-    assert.equal(vowel.jitter_local_pct, '');
+    assert.ok(Number(vowel.jitter_local_pct) >= 0 && vowel.shimmer_local_pct !== '', 'vowel rows carry jitter and shimmer');
+    assert.equal(cells(2).jitter_local_pct, '', 'not computed on the text');
   });
 });

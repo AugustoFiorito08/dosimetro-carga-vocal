@@ -32,6 +32,10 @@ export const DEFAULT_ASSESSMENT_CONFIG = Object.freeze({
     pauseBelowDb: 30, // frames this far below the loud frames (p95) are pauses, not voice
   }),
   hnr: Object.freeze({ periods: 3, lagTolerance: 0.1 }),
+  // Jitter / shimmer (local, %), exploratory and on the sustained vowel only. Limits as
+  // Praat's defaults: periods outside 0.1-20 ms, consecutive periods differing by more
+  // than ×1.3 or amplitudes by more than ×1.6 do not count.
+  perturbation: Object.freeze({ periodFloor: 0.0001, periodCeiling: 0.02, maxPeriodFactor: 1.3, maxAmplitudeFactor: 1.6, minCycles: 20 }),
   ltas: Object.freeze({ minHz: 100, bandsPerOctave: 3 }),
   cepstrum: Object.freeze({ fromSeconds: 0.001, toSeconds: 0.02, stepSeconds: 0.00025 }),
   quality: Object.freeze({
@@ -45,7 +49,7 @@ export const DEFAULT_ASSESSMENT_CONFIG = Object.freeze({
 
 function mergeConfig(config = {}) {
   const merged = { ...DEFAULT_ASSESSMENT_CONFIG, ...config };
-  for (const key of ['pitch', 'cepstral', 'hnr', 'ltas', 'cepstrum', 'quality']) {
+  for (const key of ['pitch', 'cepstral', 'hnr', 'perturbation', 'ltas', 'cepstrum', 'quality']) {
     merged[key] = { ...DEFAULT_ASSESSMENT_CONFIG[key], ...config[key] };
   }
   return merged;
@@ -188,6 +192,86 @@ function harmonicsToNoise(x, fs, frames, cfg) {
     values.push(10 * Math.log10(rho / (1 - rho)));
   }
   return values.length ? mean(values) : null;
+}
+
+/**
+ * Cycle marks by waveform matching at the recording rate: from one mark, the next is
+ * the lag (0.8-1.25 of the local period) whose period-long segment best correlates with
+ * the current one, refined by parabolic interpolation. Amplitude = peak-to-peak per cycle.
+ */
+function cycleMarks(y, a, b, periodAt) {
+  let T = periodAt(a);
+  let p = a + Math.ceil(T); // one period in, so the first window fits in the run
+  for (let n = p + 1; n < Math.min(b, a + 2 * Math.ceil(T)); n++) if (y[n] > y[p]) p = n;
+  const marks = [p];
+  for (;;) {
+    const at = Math.round(p);
+    T = periodAt(at);
+    const half = Math.round(T / 2);
+    const lo = Math.floor(T / 1.25);
+    const hi = Math.ceil(T * 1.25);
+    if (at - half < a || at + hi + half + 1 >= b) break;
+    const corr = new Float64Array(hi + 2);
+    let e0 = 0;
+    for (let i = -half; i <= half; i++) e0 += y[at + i] ** 2;
+    let best = lo;
+    for (let lag = lo - 1; lag <= hi + 1; lag++) {
+      let cross = 0;
+      let e1 = 0;
+      for (let i = -half; i <= half; i++) {
+        cross += y[at + i] * y[at + lag + i];
+        e1 += y[at + lag + i] ** 2;
+      }
+      corr[lag] = e0 > 0 && e1 > 0 ? cross / Math.sqrt(e0 * e1) : 0;
+      if (lag >= lo && lag <= hi && corr[lag] > corr[best]) best = lag;
+    }
+    const [u, v, w] = [corr[best - 1], corr[best], corr[best + 1]];
+    const curvature = u - 2 * v + w;
+    p = at + best + (curvature < 0 ? (0.5 * (u - w)) / curvature : 0);
+    marks.push(p);
+  }
+  return marks;
+}
+
+function perturbation(y, fs, runs, periodAt, cfg) {
+  const periodDiffs = [];
+  const periodsUsed = [];
+  const ampDiffs = [];
+  const ampsUsed = [];
+  let cycles = 0;
+  for (const [a, b] of runs) {
+    const marks = cycleMarks(y, a, b, periodAt);
+    const periods = [];
+    const amps = [];
+    for (let i = 0; i + 1 < marks.length; i++) {
+      periods.push((marks[i + 1] - marks[i]) / fs);
+      let max = -Infinity;
+      let min = Infinity;
+      for (let n = Math.round(marks[i]); n < Math.round(marks[i + 1]); n++) {
+        if (y[n] > max) max = y[n];
+        if (y[n] < min) min = y[n];
+      }
+      amps.push(max - min);
+    }
+    cycles += periods.length;
+    const valid = (t) => t >= cfg.periodFloor && t <= cfg.periodCeiling;
+    for (let i = 0; i + 1 < periods.length; i++) {
+      const [t0, t1] = [periods[i], periods[i + 1]];
+      if (!valid(t0) || !valid(t1) || Math.max(t0, t1) / Math.min(t0, t1) > cfg.maxPeriodFactor) continue;
+      periodDiffs.push(Math.abs(t0 - t1));
+      periodsUsed.push(t0);
+      const [a0, a1] = [amps[i], amps[i + 1]];
+      if (Math.min(a0, a1) > 0 && Math.max(a0, a1) / Math.min(a0, a1) <= cfg.maxAmplitudeFactor) {
+        ampDiffs.push(Math.abs(a0 - a1));
+        ampsUsed.push(a0);
+      }
+    }
+  }
+  return {
+    cycles,
+    jitterLocal: periodDiffs.length >= cfg.minCycles ? (100 * mean(periodDiffs)) / mean(periodsUsed) : null,
+    shimmerLocal: ampDiffs.length >= cfg.minCycles ? (100 * mean(ampDiffs)) / mean(ampsUsed) : null,
+  };
 }
 
 /** Cepstral peak prominence of one cepstrum (dB) against its least-squares tilt line. */
@@ -389,6 +473,29 @@ export function analyseVoiceSample(samples, sampleRate, { task, pressureScale = 
   const snrDb = hasVoice ? levelDbfs - noiseDbfs : null;
   const cepstral = hasVoice ? cepstralAnalysis(x, fs, cfg.cepstral, cfg.ltas, cfg.cepstrum) : null;
 
+  let perturb = { cycles: 0, jitterLocal: null, shimmerLocal: null };
+  if (task === 'VOWEL' && hasVoice) {
+    // Marks at the recording rate (finer period resolution than the 16 kHz analysis).
+    const factor = sampleRate / fs;
+    const { windowSeconds, stepSeconds } = cfg.pitch;
+    const hop = Math.round(stepSeconds * fs);
+    const size = Math.round(windowSeconds * fs);
+    const runs = [];
+    for (let i = 0; i < frames.length; i++) {
+      if (!frames[i].voiced) continue;
+      let j = i;
+      while (j + 1 < frames.length && frames[j + 1].voiced) j++;
+      runs.push([Math.round(frames[i].start * factor), Math.min(body.length, Math.round((frames[j].start + size) * factor))]);
+      i = j;
+    }
+    const periodAt = (n) => {
+      const k = Math.min(frames.length - 1, Math.max(0, Math.round((n / factor - size / 2) / hop)));
+      const f0 = frames[k].f0 ?? voiced[0].f0;
+      return sampleRate / f0;
+    };
+    perturb = perturbation(body, sampleRate, runs, periodAt, cfg.perturbation);
+  }
+
   const q = cfg.quality;
   const reasons = [];
   if (!hasVoice || voicedSeconds < q.minVoicedSeconds[task]) reasons.push('too_little_voice');
@@ -406,6 +513,9 @@ export function analyseVoiceSample(samples, sampleRate, { task, pressureScale = 
     cpp: cepstral?.cpp ?? null,
     cpps: cepstral?.cpps ?? null,
     hnr: hasVoice ? harmonicsToNoise(x, fs, frames, cfg.hnr) : null,
+    jitterLocal: perturb.jitterLocal,
+    shimmerLocal: perturb.shimmerLocal,
+    perturbationCycles: perturb.cycles,
     levelDbfs,
     splDb: hasVoice && pressureScale > 0 ? levelDbfs + 20 * Math.log10(pressureScale / REFERENCE_PRESSURE_PA) : null,
     snrDb,
@@ -421,6 +531,7 @@ export function analyseVoiceSample(samples, sampleRate, { task, pressureScale = 
       pitch: { ...cfg.pitch },
       cepstral: { ...cfg.cepstral },
       hnr: { ...cfg.hnr },
+      perturbation: { ...cfg.perturbation },
     },
   };
 }
