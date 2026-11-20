@@ -156,16 +156,25 @@ La calibración corrige la ganancia de toda la cadena (micrófono, interfaz y na
 
 El hablante evaluado registra una muestra de voz de aproximadamente 10 a 20 segundos. La muestra debe contener habla clara, variación fonética suficiente y una relación señal-ruido adecuada.
 
+Desde la versión 0.5 el enrolamiento es guiado: la primera mitad con la voz habitual y la segunda en voz alta, como al dar clase. El perfil debe cubrir la voz elevada porque es la que más carga aporta; con un perfil enrolado solo en voz normal, la voz elevada de la propia docente se rechaza en buena parte.
+
 ### 6.2 Perfil acústico
 
-La versión 0.3 utiliza:
+La versión 0.5 utiliza:
 
-- 12 coeficientes de envolvente espectral;
-- banco de filtros Mel;
+- 12 coeficientes cepstrales de envolvente espectral sobre banco de filtros Mel, calculados sobre el espectro de potencia suavizado con una media móvil de 400 Hz, más ancha que la separación entre armónicos, para que la envolvente dependa del tracto vocal y mucho menos de F0;
 - centroide espectral global;
-- hasta ocho prototipos fonéticos;
-- similitud coseno;
-- suavizado temporal de la decisión.
+- estandarización de cada característica con la media y la dispersión del enrolamiento;
+- hasta ocho prototipos fonéticos (k-means), cada uno con su varianza por dimensión;
+- distancia de Mahalanobis normalizada al prototipo más cercano, `delta = min_c (1/d) * sum_j (z_j - c_j)^2 / v_cj`;
+- calibración por hablante: durante el enrolamiento se hace una validación cruzada en 5 bloques contiguos (se entrena con 4 y se mide la distancia del bloque restante); `delta_ref` es la mediana de esas distancias de voz propia no vista (mínimo 0,25);
+- puntaje relativo `s = exp(-delta / (4,5 * delta_ref))` en (0, 1]: una trama típica de la docente puntúa alrededor de 0,80, cualquiera sea su variabilidad, el micrófono o la sala;
+- suavizado temporal del puntaje (media móvil exponencial, peso 0,05 por trama, unos 0,9 s) con histéresis: se acepta con `s >= 0,75` (`delta <= 1,3 * delta_ref`) y se deja de aceptar con `s < 0,70` (`delta > 1,6 * delta_ref`); valores provisionales, ajustables con el umbral de similitud;
+- estimación de calidad del perfil: la proporción de la voz propia reservada que el perfil atribuiría con el umbral vigente. Se muestra al enrolar y se registra en los parámetros del CSV como `ownAcceptance`, junto con `referenceDistance`. Es conservadora, porque cada bloque se evalúa con un modelo entrenado con el 80 % del enrolamiento. Por debajo de 60 % se sugiere repetir el enrolamiento.
+
+La versión 0.5.0 inicial usaba una escala absoluta (`s = exp(-delta / 3)`, aceptación con `delta <= 0,86`), ajustada con voces sintéticas cuyas vocales se repetían idénticas (`delta` propio de alrededor de 0,3). En voz real, una trama propia bien modelada tiene `delta` cercano a 1 o mayor, de modo que la mayor parte de la voz de la docente quedaba rechazada. La calibración por hablante corrige ese error.
+
+La versión 0.3 usaba similitud coseno sobre los coeficientes sin estandarizar. Ese puntaje resultaba cercano a 1 para casi cualquier voz, porque el coseno ignora la magnitud y los primeros coeficientes son parecidos entre personas. En voces sintéticas (fuente glotal y formantes) aceptaba el 100 % de las tramas de una voz similar y también de una voz masculina.
 
 ### 6.3 Regla de aceptación
 
@@ -187,6 +196,28 @@ Si cualquiera de los tres factores es cero, la trama no incrementa la dosis voca
 ### 6.4 Alcance
 
 El procedimiento es un clasificador experimental de hablante objetivo frente a no objetivo. No constituye identificación biométrica forense. Debe validarse con sensibilidad, especificidad, falsa aceptación y falso rechazo.
+
+Referencia con voces sintéticas (fuente glotal y formantes, 48 kHz, 30 s por voz, clasificador completo con los valores por defecto), con un perfil enrolado en voz normal y voz alta. La columna «estable» repite cada vocal idéntica; la columna «realista» varía los formantes y la inclinación espectral de cada vocal hasta ±10 % y su duración, como en el habla real. Porcentaje de tramas sonoras atribuidas a la docente:
+
+| Voz evaluada | Estable | Realista (±10 %) |
+|---|---|---|
+| Docente, voz normal | 100 % | 97 % |
+| Docente, F0 +15 % | 89 % | 100 % |
+| Docente, F0 +35 % (grito) | 4 % | 88 % |
+| Docente, F0 −15 % | 100 % | 100 % |
+| Voz similar del mismo sexo (formantes +6 %, F0 +12 %) | 0 % | 81 % |
+| Formantes +3 %, F0 +5 % | 58 % | 100 % |
+| Otra mujer (formantes −8 %) | 0 % | 52 % |
+| Niño o niña (F0 280 Hz, formantes +20 %) | 0 % | 0 % |
+| Voz masculina | 0 % | 0 % |
+
+Estimación de calidad del perfil: 65 % con voz estable y 95 % con voz realista. Con voces sin variabilidad la calibración es muy estrecha y rechaza cambios grandes de F0; con habla real la región de aceptación se ensancha en proporción a la variabilidad propia.
+
+Conclusión: con variabilidad realista, el método separa de forma fiable las voces de niños y de hombres, que son las más frecuentes en un aula, pero no a una mujer adulta de timbre parecido. La variación entre vocales de una misma persona es comparable a la diferencia entre dos personas de tracto vocal similar.
+
+Las pruebas `tests/speaker-verification.test.js` fijan una versión reducida de ambos escenarios (16 kHz).
+
+Con estas características espectrales, dos voces con tractos vocales casi idénticos no se distinguen; para eso hace falta un modelo de embeddings de hablante entrenado (por ejemplo x-vector o ECAPA). Estos valores son sintéticos y no reemplazan la validación con voces reales.
 
 ## 7. Rechazo de ruido y señales no válidas
 
