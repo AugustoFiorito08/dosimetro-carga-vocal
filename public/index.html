@@ -4,14 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
-    <title>Dosímetro de Carga Vocal v0.4.0</title>
+    <title>Dosímetro de Carga Vocal v0.5.0</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <header class="topbar">
       <div class="brand">
         <h1>Dosímetro de carga vocal</h1>
-        <span class="version">v0.4.0 · experimental</span>
+        <span class="version">v0.5.0 · experimental</span>
       </div>
       <div class="session-state" aria-live="polite">
         <span class="state-dot" id="mode-dot" aria-hidden="true"></span>
@@ -85,15 +85,15 @@
               <span class="step-value" id="enrolment">Sin perfil</span>
             </div>
             <button id="enroll" type="button" class="btn" disabled>Enrolar voz (15 s)</button>
-            <p class="hint">Habla clara y continua, con variedad de vocales.</p>
+            <p class="hint">Habla clara y continua, con variedad de vocales: la primera mitad con tu voz normal y la segunda en voz alta, como al dar clase.</p>
           </li>
           <li class="step">
             <div class="step-head">
               <label class="step-title" for="threshold">Umbral de similitud</label>
-              <output class="step-value" id="threshold-value" for="threshold">0.85</output>
+              <output class="step-value" id="threshold-value" for="threshold">0.75</output>
             </div>
-            <input id="threshold" type="range" min="0.50" max="0.99" step="0.01" value="0.85" />
-            <p class="hint">Se aplica al iniciar la sesión.</p>
+            <input id="threshold" type="range" min="0.50" max="0.99" step="0.01" value="0.75" />
+            <p class="hint">Más alto: rechaza más voces ajenas, pero también más de tu propia voz. Se aplica al iniciar la sesión.</p>
           </li>
           <li class="step" id="step-workday">
             <div class="step-head">
