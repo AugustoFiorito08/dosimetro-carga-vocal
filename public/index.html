@@ -95,6 +95,34 @@
             <input id="threshold" type="range" min="0.50" max="0.99" step="0.01" value="0.85" />
             <p class="hint">Se aplica al iniciar la sesión.</p>
           </li>
+          <li class="step" id="step-workday">
+            <div class="step-head">
+              <span class="step-title">Jornada (tableros)</span>
+              <span class="step-value" id="jr-status">Sin guardar</span>
+            </div>
+            <div class="code-grid">
+              <label>Docente<input id="jr-participant" type="text" placeholder="P-0421" pattern="[A-Za-z0-9._\-]{1,32}" autocomplete="off" /></label>
+              <label>Escuela<input id="jr-school" type="text" placeholder="E-25" pattern="[A-Za-z0-9._\-]{1,32}" autocomplete="off" /></label>
+              <label>Aula<input id="jr-classroom" type="text" placeholder="2B" pattern="[A-Za-z0-9._\-]{1,32}" autocomplete="off" /></label>
+            </div>
+            <p class="hint">Usá códigos, nunca nombres: el registro es seudónimo.</p>
+            <label class="vas">Fatiga vocal antes de la jornada (EVA 0-100)<input id="jr-pre" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+            <div class="row">
+              <label class="visually-hidden" for="jr-event-type">Tipo de evento</label>
+              <select id="jr-event-type" disabled>
+                <option value="llamado_atencion">Llamado de atención</option>
+                <option value="explicacion">Explicación</option>
+                <option value="actividad_grupal">Actividad grupal</option>
+                <option value="recreo">Recreo</option>
+                <option value="otro">Otro</option>
+              </select>
+              <button id="jr-event-add" type="button" class="btn" disabled>Marcar evento</button>
+            </div>
+            <p class="hint" id="jr-events">Sin eventos marcados.</p>
+            <label class="vas">Fatiga vocal después de la jornada (EVA 0-100)<input id="jr-post" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+            <button id="jr-save" type="button" class="btn primary" disabled>Guardar jornada</button>
+            <p class="hint">Se guarda solo un resumen en este navegador (sin audio).</p>
+          </li>
         </ol>
 
         <div class="progress" id="progress" hidden>
@@ -115,6 +143,15 @@
           <button id="export" type="button" class="btn" disabled>Exportar CSV</button>
         </div>
 
+        <div class="tabs" role="tablist" aria-label="Vistas">
+          <button type="button" role="tab" class="tab" id="tab-btn-live" aria-controls="tab-live" aria-selected="true">Panel en vivo</button>
+          <button type="button" role="tab" class="tab" id="tab-btn-score" aria-controls="tab-score" aria-selected="false" tabindex="-1">Partitura vocal</button>
+          <button type="button" role="tab" class="tab" id="tab-btn-teacher" aria-controls="tab-teacher" aria-selected="false" tabindex="-1">Mi jornada</button>
+          <button type="button" role="tab" class="tab" id="tab-btn-director" aria-controls="tab-director" aria-selected="false" tabindex="-1">Dirección</button>
+          <button type="button" role="tab" class="tab" id="tab-btn-analytics" aria-controls="tab-analytics" aria-selected="false" tabindex="-1">Analítica</button>
+        </div>
+
+        <div class="tab-panel" id="tab-live" role="tabpanel" aria-labelledby="tab-btn-live">
         <section class="kpis" aria-label="Indicadores en vivo">
           <article class="kpi status-kpi" data-category="none" id="status-card">
             <h3>Estado de fonación</h3>
@@ -170,6 +207,104 @@
           </table>
           <p class="hint" id="dose-units">Unidades relativas (sin calibración de presión).</p>
         </section>
+
+        </div>
+
+        <section class="panel score" id="tab-score" role="tabpanel" aria-labelledby="tab-btn-score" hidden>
+          <div class="score-head">
+            <div>
+              <h2>Partitura dosimétrica vocal</h2>
+              <p class="score-sub">No solo cuánto se acumula: cuándo y cómo se utiliza la voz.</p>
+            </div>
+            <div class="score-controls">
+              <label for="score-dose">Dosis</label>
+              <select id="score-dose">
+                <option value="none">D0 · sin memoria</option>
+                <option value="linear">DL · lineal</option>
+                <option value="power">DP · potencial</option>
+                <option value="exponential">DE · exponencial</option>
+                <option value="saturating">DS · saturante</option>
+                <option value="distance" disabled>Dd · distancia (m)</option>
+              </select>
+            </div>
+          </div>
+          <p class="score-badge">Modelo conceptual · validación pendiente</p>
+
+          <div class="score-tracks">
+            <div class="score-row" data-row="phi">
+              <div class="score-label"><span class="score-num">1</span><span>Fonación y pausas<b>Φ(t)</b></span></div>
+              <canvas data-track="phi" aria-label="Fonación atribuida y pausas a lo largo de la sesión"></canvas>
+              <p class="score-note">Bloques de fonación atribuida e intervalos de pausa.</p>
+            </div>
+            <div class="score-row">
+              <div class="score-label"><span class="score-num">2</span><span>Frecuencia fundamental<b>F<sub>0</sub> (Hz)</b></span></div>
+              <canvas data-track="f0" aria-label="Frecuencia fundamental durante la voz"></canvas>
+              <p class="score-note">Solo durante la voz atribuida; sin valores en las pausas.</p>
+            </div>
+            <div class="score-row">
+              <div class="score-label"><span class="score-num">3</span><span>Nivel vocal<b>L<sub>p</sub> (<span id="score-level-unit">dBFS</span>)</b></span></div>
+              <canvas data-track="level" aria-label="Nivel vocal durante la voz"></canvas>
+              <p class="score-note">Solo durante la voz. dB SPL si la sesión está calibrada; dBFS si no.</p>
+            </div>
+            <div class="score-row">
+              <div class="score-label"><span class="score-num">4</span><span>Memoria modelada<b>H(t) (s)</b></span></div>
+              <canvas data-track="h" aria-label="Estado de carga reciente H"></canvas>
+              <p class="score-note">Estado matemático del modelo, no fatiga medida.</p>
+            </div>
+            <div class="score-row">
+              <div class="score-label"><span class="score-num">5</span><span>Tasa de dosis<b>ΔD/Δt (<span id="score-rate-unit">u/min</span>)</b></span></div>
+              <canvas data-track="rate" aria-label="Tasa de acumulación de la dosis"></canvas>
+              <p class="score-note">Picos de acumulación; cero en las pausas.</p>
+            </div>
+            <div class="score-row">
+              <div class="score-label"><span class="score-num">6</span><span>Dosis acumulada<b><span id="score-dose-name">D<sub>0</sub></span> (<span id="score-dose-unit">u</span>)</b></span></div>
+              <canvas data-track="dose" aria-label="Dosis acumulada"></canvas>
+              <p class="score-note">Siempre creciente o plana; mesetas en las pausas.</p>
+            </div>
+            <div class="score-row score-axis-row">
+              <span></span>
+              <canvas data-axis aria-hidden="true"></canvas>
+              <span></span>
+            </div>
+            <div class="score-tooltip" data-tooltip role="status" hidden></div>
+            <p class="score-empty" id="score-empty">Iniciá una sesión para ver la partitura.</p>
+          </div>
+
+          <div class="score-callouts">
+            <p><b>En la pausa:</b> la dosis acumulada permanece; H puede disminuir.</p>
+            <p>Los picos de ΔD/Δt son la tasa de acumulación, no una caída o subida reversible de D.</p>
+            <p>Sombreado claro: pausas de 2 s o más · gris: sesión en pausa. u = unidades del modelo.</p>
+          </div>
+
+          <div class="score-analogy" aria-label="Analogía musical">
+            <h3>Analogía musical: una misma canción, varios elementos</h3>
+            <ul>
+              <li><b>Altura</b> → F<sub>0</sub></li>
+              <li><b>Duración</b> → fonación</li>
+              <li><b>Dinámica</b> → nivel vocal</li>
+              <li><b>Silencios</b> → pausas</li>
+              <li><b>Secuencia</b> → historia de exposición (H)</li>
+            </ul>
+          </div>
+        </section>
+
+        <div class="board-bar" id="board-bar" hidden>
+          <label>Datos
+            <select data-source>
+              <option value="real">Jornadas guardadas en este navegador</option>
+              <option value="demo">Datos simulados</option>
+            </select>
+          </label>
+          <span class="board-count" data-count>0 jornadas</span>
+          <span class="spacer"></span>
+          <label class="btn file-btn">Importar jornadas (JSON)<input type="file" accept="application/json,.json" data-import hidden /></label>
+          <button type="button" class="btn" data-export>Exportar jornadas (JSON)</button>
+          <button type="button" class="btn" data-clear>Borrar jornadas</button>
+          <p class="demo-banner" data-demo-banner hidden>DATOS SIMULADOS · prototipo · la relación dosis-fatiga es inventada (sigue H0) y no es evidencia</p>
+        </div>
+        <div class="tab-panel board" id="tab-teacher" role="tabpanel" aria-labelledby="tab-btn-teacher" hidden></div>
+        <div class="tab-panel board" id="tab-director" role="tabpanel" aria-labelledby="tab-btn-director" hidden></div>
+        <div class="tab-panel board" id="tab-analytics" role="tabpanel" aria-labelledby="tab-btn-analytics" hidden></div>
 
         <footer class="diagnostics" aria-label="Diagnóstico de adquisición">
           <span>Tramas <b id="d-received">0</b> recibidas · <b id="d-processed">0</b> procesadas</span>

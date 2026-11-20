@@ -456,6 +456,68 @@ La pantalla funcional incluye:
 
 Las zonas de carga son provisionales y no deben interpretarse como límites clínicos o legales.
 
+### 12.1 Partitura vocal
+
+La solapa **Partitura vocal** muestra la evolución temporal de toda la sesión como una partitura: seis pistas sincronizadas sobre un mismo eje de tiempo (hora del día desde el inicio de la sesión).
+
+| Pista | Contenido | Nota |
+|---|---|---|
+| 1. `Φ(t)` | bloques de fonación atribuida y pausas | intensidad proporcional a la fracción de fonación de cada columna |
+| 2. `F0` (Hz) | media de `F0` en la fonación | sin valores en las pausas; escala fija 75-350 Hz, ampliada si los datos la exceden |
+| 3. `L_p` | nivel medio en la fonación, en dB SPL si la sesión está calibrada (40-110) o en dBFS (−70 a 0) | escala ampliada solo por los percentiles 2-98 de los datos |
+| 4. `H(t)` (s) | estado de carga reciente | estado matemático del modelo, no fatiga medida |
+| 5. `ΔD/Δt` | dosis ganada en cada columna dividida por el tiempo que cubre, por minuto | picos de acumulación; cero en las pausas |
+| 6. `D` | dosis acumulada elegida: `D_0`, `D_L`, `D_P`, `D_E`, `D_S` o `D_d` (si la sesión la calcula) | siempre creciente o plana; mesetas en las pausas |
+
+- Las pausas de 2 s o más se sombrean en todas las pistas; los intervalos con la sesión en pausa se muestran como huecos, nunca como datos.
+- Al pasar el cursor, una línea vertical recorre las seis pistas y un recuadro muestra la hora y el valor de cada pista en ese instante.
+- Los datos se guardan por trama y se reducen a una columna cada 2 píxeles antes de dibujar, para sostener una jornada completa. Mientras llegan tramas, la partitura se redibuja como máximo cada 0,7 s y solo si la solapa está visible.
+- La solapa incluye la analogía musical (altura → `F0`, duración → fonación, dinámica → nivel, silencios → pausas, secuencia → historia de exposición `H`) y la advertencia "Modelo conceptual · validación pendiente".
+- Las comparaciones entre jornadas y entre docentes están en las pestañas de tableros (§12.2-§12.5).
+
+### 12.2 Registro de jornadas
+
+El paso **Jornada (tableros)** guarda un resumen de cada sesión (`vd-des-workday/1`) en el navegador (IndexedDB). El resumen no contiene audio ni tramas; incluye:
+
+- códigos seudónimos de docente, escuela y aula (letras, números, `.`, `-` o `_`, sin espacios ni nombres);
+- fecha, inicio, duración y tiempo de fonación;
+- todas las dosis (`D_0`, `D_L`, `D_P`, `D_E`, `D_S`, `D_d` si se calculó, `D_t`, `D_c`) y `H` final;
+- percentiles 10, 50 y 90 de `F0` y del nivel;
+- proporción de tiempo clasificado con certeza (calidad de la jornada);
+- dosis acumuladas al final de cada minuto (línea de tiempo);
+- eventos de contexto marcados por el docente durante la medición (llamado de atención, explicación, actividad grupal, recreo, otro) y eventos automáticos;
+- fatiga vocal percibida antes y después de la jornada, en una escala visual analógica de 0 a 100 (desenlace primario del protocolo), optativas;
+- versión del algoritmo y origen (`live`, `import` o `demo`).
+
+Las jornadas se exportan e importan como JSON (`vd-des-workdays/1`) para reunir las de varios equipos; al importar se omiten los identificadores ya presentes y se informan los registros inválidos.
+
+**Eventos automáticos (reglas provisionales):** fonación sostenida, cuando una ventana de 120 s tiene al menos 60 % de fonación (se recorta a sus bordes con voz); nivel elevado, cuando la voz supera durante 3 s o más la mediana de la propia jornada en 6 dB. Describen el patrón acústico; no identifican la actividad ni diagnostican fatiga.
+
+### 12.3 Mi jornada
+
+Vista del docente para una jornada elegida: fonación, tiempo observado, porcentaje de fonación, dosis de la jornada frente a su propia mediana, EVA pre y post, dosis acumulada y tasa por minuto con los eventos marcados, y la lista de eventos.
+
+### 12.4 Dirección
+
+Vista preventiva por escuela y semana. Los docentes aparecen solo por código, y **cualquier grupo de menos de 3 docentes se oculta** (aulas en el mapa y en la tabla, y la vista completa si la escuela tiene menos de 3 docentes esa semana). Incluye: KPI con variación respecto de la semana anterior; mapa de calor aula × día con la dosis media (rampa azul de un solo tono y el valor en cada celda); docentes con EVA pre media ≥ 30; carga por aula con su estado frente a los niveles de acción; distribución de la EVA pre y post; percentiles 10, 50 y 90 de la EVA pre por día; y la jornada de un docente con sus eventos, sujeta a autorización.
+
+### 12.5 Analítica
+
+Vista de investigación sobre todas las jornadas disponibles:
+
+- KPI (participantes, jornadas recibidas y válidas, escuelas, última recepción, calidad global) y participación mensual;
+- distribución de la dosis elegida y del cambio de EVA (post − pre), con n, media, mediana, DE, P25, P75 y P95 (cuantiles tipo 7);
+- últimas jornadas recibidas;
+- dosis-respuesta: regresión lineal (OLS) del cambio de EVA sobre la dosis, con banda de confianza al 95 % de la media (t de Student exacta), R² y rho de Spearman;
+- curvas ROC de cada modelo para el caso **cambio de EVA ≥ umbral** (configurable, 20 puntos por defecto y provisional, porque el protocolo exige fijar la magnitud mínima relevante antes de analizar), con AUC de Mann-Whitney e intervalo de Hanley-McNeil al 95 %;
+- en el corte de Youden (empates a la mayor sensibilidad): sensibilidad, especificidad, VPP y VPN con intervalos de Wilson al 95 %;
+- niveles de acción provisionales: C1 = corte de Youden y C2 = menor corte con especificidad ≥ 0,90, con zonas baja, media y alta, siempre con ícono y texto;
+- exportación de los resúmenes en CSV.
+
+Las AUC son aparentes (misma muestra); la validación agrupada por docente, los modelos mixtos y los splines quedan para el análisis definitivo. Todas las pantallas indican "Valores provisionales · sin umbrales sanitarios validados".
+
+**Datos simulados:** un conjunto reproducible (3 escuelas, aulas de al menos 3 docentes, 4 semanas hábiles, ausencias y EVA faltantes) permite ver los tableros sin datos reales. Siempre se muestra con el aviso "DATOS SIMULADOS" y nunca se mezcla con las jornadas guardadas. La fatiga simulada sigue la hipótesis nula del protocolo (la memoria no aporta), de modo que ningún modelo resulta favorecido por construcción: la demo no es evidencia.
+
 ## 13. Exportación de datos
 
 La aplicación exporta un archivo CSV por trama. Debe incluir, como mínimo:
@@ -500,6 +562,8 @@ La conservación de scores continuos permite recalcular decisiones con nuevos um
 - La plantilla debe considerarse un dato sensible.
 - Para investigación con personas se requiere consentimiento informado y revisión ética.
 - La base analítica debe utilizar identificadores codificados.
+- Las jornadas guardadas contienen solo resúmenes y códigos, quedan en el navegador del equipo y se pueden exportar o borrar desde la barra de datos.
+- Los tableros nunca muestran nombres y ocultan los grupos de menos de 3 docentes.
 
 ## 15. Instalación y ejecución
 
