@@ -37,6 +37,7 @@ const REASON_LABELS = {
   weak_periodicity: 'Periodicidad insuficiente',
   low_snr: 'SNR insuficiente',
   speaker_mismatch: 'No coincide con el perfil',
+  f0_out_of_range: 'Tono fuera del rango enrolado',
   no_profile: 'Sin perfil enrolado',
 };
 const MODE_LABELS = {
@@ -90,6 +91,9 @@ let sessionStartedAt = null;
 // ---------- formatting ----------
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const fixed = (v, d = 1) => (isNum(v) ? v.toFixed(d) : '—');
+const percent = (v) => `${Math.round(100 * v)} %`;
+/** Below this estimated own-voice acceptance the enrolment is worth repeating (provisional). */
+const LOW_PROFILE_QUALITY = 0.6;
 function duration(seconds) {
   if (!isNum(seconds)) return '—';
   const s = Math.floor(seconds);
@@ -333,7 +337,15 @@ el.calibrate.addEventListener('click', () =>
   runTask('Calibración', () => manager.session.calibrate(), (rms) => `Ambiente calibrado: ${fixed(toDb(rms), 1)} dBFS. Ahora enrolá la voz.`),
 );
 el.enroll.addEventListener('click', () =>
-  runTask('Enrolamiento', () => manager.session.enroll(), (p) => `Perfil creado con ${p.prototypes.length} prototipos. Ya podés iniciar.`),
+  runTask('Enrolamiento', () => manager.session.enroll(), () => {
+    const quality = manager.session.profileQuality;
+    if (quality !== null && quality < LOW_PROFILE_QUALITY) {
+      return `Perfil creado, pero reconoce solo el ${percent(quality)} de tu voz de prueba. Conviene repetir el enrolamiento: 15 s continuos, primero voz normal y después en voz alta.`;
+    }
+    const range = manager.session.profile?.f0Range;
+    const f0 = range ? ` Tu tono: ${Math.round(range.low)}-${Math.round(range.high)} Hz.` : '';
+    return `Perfil creado${quality === null ? '' : `: reconoce el ${percent(quality)} de tu voz de prueba`}.${f0} Ya podés iniciar.`;
+  }),
 );
 
 /** Why D_d is (not) shown, so an empty value is never silent. */
@@ -438,7 +450,8 @@ function renderControls(session) {
     setAttr(el['step-distance'], 'data-done', String(ddOn && cal !== null));
     setText(el['noise-floor'], session.noiseFloorRms === null ? 'Sin medir' : `${fixed(toDb(session.noiseFloorRms), 1)} dBFS`);
     setAttr(el['step-calibrate'], 'data-done', String(session.noiseFloorRms !== null));
-    setText(el.enrolment, session.profile ? `${session.profile.prototypes.length} prototipos` : 'Sin perfil');
+    const quality = session.profileQuality;
+    setText(el.enrolment, !session.profile ? 'Sin perfil' : quality === null ? `${session.profile.prototypes.length} prototipos` : `Reconoce ${percent(quality)} de tu voz`);
     setAttr(el['step-enroll'], 'data-done', String(session.profile !== null));
   }
 
@@ -446,7 +459,9 @@ function renderControls(session) {
   if (progress) {
     const enrolling = progress.validTime !== undefined;
     const done = enrolling ? progress.validTime : progress.elapsed;
-    const label = enrolling ? 'Voz válida' : progress.mode === MODES.ACOUSTIC_CALIBRATING ? 'Tono de referencia' : 'Ambiente';
+    // Guided enrolment: the profile must cover the raised classroom voice too (spec §6.1).
+    const enrolPhase = done < progress.target / 2 ? 'Voz normal' : 'Ahora en voz alta';
+    const label = enrolling ? enrolPhase : progress.mode === MODES.ACOUSTIC_CALIBRATING ? 'Tono de referencia' : 'Ambiente';
     setText(el['progress-label'], label);
     setText(el['progress-value'], `${fixed(done, 1)} / ${progress.target} s`);
     el['progress-bar'].style.width = `${Math.min(100, (100 * done) / progress.target)}%`;

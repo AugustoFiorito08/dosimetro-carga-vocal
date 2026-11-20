@@ -77,8 +77,8 @@ describe('session CSV', () => {
     const dt = N / SR;
     assert.deepEqual(rows.map((r) => Number(r[0])), [0, dt, 5 * dt]);
     assert.deepEqual(rows.map((r) => r[11]), ['fonacion_atribuida', 'fonacion_atribuida', 'silencio']);
-    assert.equal(rows[0][19], '0.4.0');
-    assert.match(rows[0][20], /^sampleRate=16000;beta=.*hStar=300;fStar=2;.*acceptThreshold=0\.85;rejectThreshold=0\.75;/);
+    assert.equal(rows[0][19], '0.5.0');
+    assert.match(rows[0][20], /^sampleRate=16000;beta=.*hStar=300;fStar=2;.*acceptThreshold=0\.65;rejectThreshold=0\.6;/);
     assert.match(rows[0][20], /;highPassHz=50$/);
     assert.deepEqual(rows.map((r) => Number(r[21])), [dt, 2 * dt, 2 * dt], 'time dose accumulates attributed frames only');
   });
@@ -99,9 +99,22 @@ describe('session CSV', () => {
     session.start();
     send(voice, 1);
     const row = session.exportCsv().split('\r\n')[1];
-    assert.match(row, /acceptThreshold=0\.9;rejectThreshold=0\.8;/);
+    assert.match(row, /acceptThreshold=0\.9;rejectThreshold=0\.85;/);
     assert.throws(() => session.setSimilarityThreshold(0), RangeError);
     assert.throws(() => session.setSimilarityThreshold(1.5), RangeError);
+  });
+
+  it('reports the estimated own-voice acceptance of the profile and records it', async () => {
+    const { session, send } = await readySession();
+    const quality = session.profileQuality;
+    assert.ok(quality > 0 && quality <= 1, `quality ${quality}`);
+    session.setSimilarityThreshold(0.99);
+    assert.ok(session.profileQuality <= quality, 'a stricter threshold cannot accept more');
+    session.setSimilarityThreshold(0.65);
+    session.start();
+    send(voice, 1);
+    const row = session.exportCsv().split('\r\n')[1];
+    assert.match(row, /;referenceDistance=[\d.]+;ownAcceptance=[\d.]+;f0Low=[\d.]+;f0High=[\d.]+;/);
   });
 });
 

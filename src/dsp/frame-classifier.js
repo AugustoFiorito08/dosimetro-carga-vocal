@@ -10,7 +10,7 @@ import {
   toDb,
   updateNoiseFloor,
 } from './signal-quality.js';
-import { DEFAULT_IDENTITY_CONFIG, createIdentityState, speakerScore, updateIdentity } from './speaker-profile.js';
+import { DEFAULT_IDENTITY_CONFIG, createIdentityState, f0Consistent, speakerScore, updateIdentity } from './speaker-profile.js';
 
 /** The five mutually exclusive categories of spec §7. */
 export const CATEGORIES = Object.freeze({
@@ -53,10 +53,11 @@ function resolveConfig(config = {}) {
 /**
  * Pure decision table. Order defines exclusivity:
  * silence (gate) -> impulsive noise -> aperiodic / out-of-band noise ->
- * uncertain (weak periodicity, low SNR) -> unattributed voice -> attributed.
+ * uncertain (weak periodicity, low SNR) -> unattributed voice (F0 out of the enrolled
+ * range, or spectral mismatch) -> attributed.
  * @returns {{ category: string, reason: string | null }}
  */
-export function decideCategory({ V, W, Q, qualityReason, periodicity, inVocalBand, hasProfile }, config = {}) {
+export function decideCategory({ V, W, Q, qualityReason, periodicity, inVocalBand, hasProfile, f0OutOfRange = false }, config = {}) {
   const { noisePeriodicityMax } = { ...DEFAULT_CLASSIFIER_CONFIG, ...config };
   if (qualityReason === 'below_gate') return { category: CATEGORIES.SILENCE, reason: 'below_gate' };
   if (qualityReason === 'impulsive') return { category: CATEGORIES.NOISE, reason: 'impulsive' };
@@ -66,7 +67,10 @@ export function decideCategory({ V, W, Q, qualityReason, periodicity, inVocalBan
     return { category: CATEGORIES.UNCERTAIN, reason: 'weak_periodicity' };
   }
   if (Q === 0) return { category: CATEGORIES.UNCERTAIN, reason: qualityReason ?? 'low_quality' };
-  if (W === 0) return { category: CATEGORIES.UNATTRIBUTED_VOICE, reason: hasProfile ? 'speaker_mismatch' : 'no_profile' };
+  if (W === 0) {
+    if (!hasProfile) return { category: CATEGORIES.UNATTRIBUTED_VOICE, reason: 'no_profile' };
+    return { category: CATEGORIES.UNATTRIBUTED_VOICE, reason: f0OutOfRange ? 'f0_out_of_range' : 'speaker_mismatch' };
+  }
   return { category: CATEGORIES.ATTRIBUTED, reason: null };
 }
 
@@ -106,11 +110,14 @@ export function classifyFrame(state, samples, sampleRate) {
   const V = pitch.isPeriodic && inVocalBand && quality.reason !== 'below_gate' ? 1 : 0;
   const Q = quality.Q;
   const score = V === 1 && Q === 1 && profile ? speakerScore(profile, spectral.vector) : null;
-  const identity = updateIdentity(state.identity, score, dt, config.identity);
-  const W = score === null ? 0 : identity.W;
+  // A frame whose F0 is incompatible with the enrolment is never attributed and counts as
+  // a zero score for the smoothed decision.
+  const f0InRange = score === null || f0Consistent(profile, pitch.f0);
+  const identity = updateIdentity(state.identity, score === null ? null : f0InRange ? score : 0, dt, config.identity);
+  const W = score === null || !f0InRange ? 0 : identity.W;
   const phi = V * W * Q;
   const { category, reason } = decideCategory(
-    { V, W, Q, qualityReason: quality.reason, periodicity: pitch.periodicity, inVocalBand, hasProfile: profile !== null },
+    { V, W, Q, qualityReason: quality.reason, periodicity: pitch.periodicity, inVocalBand, hasProfile: profile !== null, f0OutOfRange: !f0InRange },
     config,
   );
 
@@ -129,6 +136,7 @@ export function classifyFrame(state, samples, sampleRate) {
     centroidHz: spectral.centroidHz,
     features: spectral.vector,
     speakerScore: score,
+    f0InRange,
     smoothedScore: identity.smoothedScore,
     V,
     W,

@@ -4,7 +4,7 @@ import { DEFAULT_CALIBRATION_CONFIG, calibrationDrift, computeCalibration } from
 import { classifyFrame, createFrameClassifier } from '../dsp/frame-classifier.js';
 import { createHighPassFilter } from '../dsp/high-pass.js';
 import { calibrateNoiseFloor, framePeak, frameRms } from '../dsp/signal-quality.js';
-import { DEFAULT_IDENTITY_CONFIG, enrollProfile } from '../dsp/speaker-profile.js';
+import { DEFAULT_IDENTITY_CONFIG, enrollProfile, ownAcceptance } from '../dsp/speaker-profile.js';
 import {
   ALGORITHM_VERSION,
   buildCsv,
@@ -55,6 +55,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
   let mode = MODES.IDLE;
   let noiseFloorRms = null;
   let profile = null;
+  let enrolFrameDuration = null;
   let task = null; // { resolve, reject, onFrame } of the running calibration / enrolment
   let classifier = null;
   let load = null;
@@ -157,6 +158,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     if (noiseFloorRms === null) return Promise.reject(new Error('calibrate the ambient noise before enrolling'));
     let state = createFrameClassifier({ config: classifierConfig, noiseFloorRms });
     const vectors = [];
+    const f0s = [];
     let validTime = 0;
     let elapsed = 0;
     let frameDuration = 0;
@@ -166,7 +168,9 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
           maxPrototypes: cfg.maxPrototypes,
           frameDuration,
           minDuration: cfg.enrollMinSeconds,
+          f0: f0s,
         });
+        enrolFrameDuration = frameDuration;
         task.resolve(profile);
       } catch (error) {
         task.reject(error);
@@ -179,6 +183,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
       frameDuration = dt;
       if (result.analysis.V === 1 && result.analysis.Q === 1) {
         vectors.push(result.analysis.features);
+        f0s.push(result.analysis.f0);
         validTime += dt;
       }
       latest = { analysis: result.analysis, load: null };
@@ -189,6 +194,26 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
         else task.reject(new Error(`only ${validTime.toFixed(1)} s of valid voice in ${elapsed.toFixed(1)} s; need ${cfg.enrollMinSeconds} s`));
       }
     });
+  }
+
+  const identityThresholds = () => ({
+    acceptThreshold: similarityThreshold,
+    rejectThreshold: Math.max(0, similarityThreshold - THRESHOLD_HYSTERESIS),
+  });
+
+  /**
+   * Estimated share of the speaker's own voice that the profile attributes to her at the
+   * current threshold (held-out enrolment frames, spec §6.4); null without a profile or
+   * when the enrolment was too short to cross-validate.
+   */
+  let qualityCache = { profile: null, threshold: null, value: null };
+  function profileQuality() {
+    if (profile === null) return null;
+    if (qualityCache.profile !== profile || qualityCache.threshold !== similarityThreshold) {
+      const value = ownAcceptance(profile, { ...classifierConfig?.identity, ...identityThresholds() }, enrolFrameDuration ?? undefined);
+      qualityCache = { profile, threshold: similarityThreshold, value };
+    }
+    return qualityCache.value;
   }
 
   /** Speaker similarity accept threshold (spec §12); applied at the next start(). */
@@ -214,11 +239,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
         code: 'distance_dose_needs_calibration',
       });
     }
-    const identity = {
-      ...classifierConfig?.identity,
-      acceptThreshold: similarityThreshold,
-      rejectThreshold: Math.max(0, similarityThreshold - THRESHOLD_HYSTERESIS),
-    };
+    const identity = { ...classifierConfig?.identity, ...identityThresholds() };
     sessionCalibration = acousticCalibration;
     postCalibration = null;
     drift = null;
@@ -243,6 +264,10 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
         acceptThreshold: id.acceptThreshold,
         rejectThreshold: id.rejectThreshold,
         smoothing: id.smoothing,
+        referenceDistance: profile.referenceDistance,
+        ownAcceptance: profileQuality() ?? undefined,
+        f0Low: profile.f0Range?.low,
+        f0High: profile.f0Range?.high,
         minF0: pitch.minF0,
         maxF0: pitch.maxF0,
         yinThreshold: pitch.threshold,
@@ -363,6 +388,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     get stats() { return { ...stats }; },
     get recordCount() { return records.length; },
     get similarityThreshold() { return similarityThreshold; },
+    get profileQuality() { return profileQuality(); },
     sampleRate,
   };
 }

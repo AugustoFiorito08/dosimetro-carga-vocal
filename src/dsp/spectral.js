@@ -7,6 +7,11 @@ export const DEFAULT_SPECTRAL_CONFIG = Object.freeze({
   maxFrequency: 8000, // Hz, clipped to Nyquist
   vocalBandLow: 70, // Hz
   vocalBandHigh: 4000, // Hz
+  // Moving-average width applied to the power spectrum before the Mel filters. It is
+  // wider than the harmonic spacing (F0 up to ~400 Hz), so the low Mel filters see the
+  // vocal-tract envelope instead of individual harmonics and the cepstrum depends far
+  // less on F0: a raised voice keeps the speaker's envelope. 0 disables it.
+  envelopeSmoothingHz: 400,
 });
 
 export const FEATURE_DIMENSION = DEFAULT_SPECTRAL_CONFIG.coefficients + 1;
@@ -72,6 +77,18 @@ export function powerSpectrum(samples) {
   return power;
 }
 
+/** Centered moving average over `halfWidth` bins on each side (prefix sums, O(n)). */
+export function smoothSpectrum(power, halfWidth) {
+  if (!(halfWidth >= 1)) return power;
+  const prefix = new Float64Array(power.length + 1);
+  for (let k = 0; k < power.length; k++) prefix[k + 1] = prefix[k] + power[k];
+  return Float64Array.from(power, (_, k) => {
+    const a = Math.max(0, k - halfWidth);
+    const b = Math.min(power.length - 1, k + halfWidth);
+    return (prefix[b + 1] - prefix[a]) / (b - a + 1);
+  });
+}
+
 const filterbankCache = new Map();
 
 /** Triangular Mel filterbank as arrays of { start, weights } over FFT bins. */
@@ -104,7 +121,8 @@ export function melFilterbank(fftSize, sampleRate, filters, minFrequency, maxFre
 
 /**
  * Spectral features of one frame.
- * `vector` (13 dims) = 12 Mel-cepstral envelope coefficients + centroid / Nyquist.
+ * `vector` (13 dims) = 12 Mel-cepstral envelope coefficients + centroid / Nyquist; the
+ * cepstrum is taken from the harmonic-smoothed spectrum (`envelopeSmoothingHz`).
  * @returns {{ vector: Float64Array, envelope: Float64Array, centroidHz: number,
  *   centroidNormalized: number, vocalBandRatio: number, totalPower: number }}
  */
@@ -131,10 +149,11 @@ export function extractSpectralFeatures(samples, sampleRate, config = {}) {
   }
   const centroidHz = totalMagnitude === 0 ? 0 : weightedMagnitude / totalMagnitude;
 
+  const envelopePower = smoothSpectrum(power, Math.round(cfg.envelopeSmoothingHz / binHz / 2));
   const bank = melFilterbank(fftSize, sampleRate, cfg.melFilters, cfg.minFrequency, cfg.maxFrequency);
   const energies = bank.map(({ start, weights }) => {
     let energy = 0;
-    for (let i = 0; i < weights.length; i++) energy += (power[start + i] ?? 0) * weights[i];
+    for (let i = 0; i < weights.length; i++) energy += (envelopePower[start + i] ?? 0) * weights[i];
     return energy;
   });
   const floor = Math.max(...energies) * RELATIVE_LOG_FLOOR + ABSOLUTE_LOG_FLOOR;
