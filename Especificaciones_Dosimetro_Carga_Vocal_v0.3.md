@@ -601,6 +601,7 @@ La conservación de scores continuos permite recalcular decisiones con nuevos um
 
 - El procesamiento se realiza localmente.
 - El audio no se conserva por defecto.
+- La evaluación acústica PRE–POST (§23) tampoco conserva audio: cada muestra se analiza en memoria y se borra. Solo se guardan medidas y dos espectros promediados (LTAS y cepstro medio), de los que no se puede reconstruir la voz ni lo dicho.
 - La plantilla del hablante puede mantenerse en memoria o guardarse localmente.
 - La plantilla debe considerarse un dato sensible.
 - Para investigación con personas se requiere consentimiento informado y revisión ética.
@@ -726,3 +727,77 @@ La salida correcta es un índice experimental de carga vocal calculada. No debe 
 | 0.3.1 | 2026-11-13 | Anclaje común `f(H*) = f*` ligado a `beta` y dosis convencionales de tiempo y de ciclos |
 | 0.3.2 | 2026-11-13 | Filtro pasa-altos de 50 Hz en la entrada; corte registrado en los parámetros exportados |
 | 0.4.0 | 2026-11-18 | Calibración acústica con tono de referencia, deriva pre/post, presión en Pa y nivel en dB SPL en el CSV, `P_0 = 1 Pa` con calibración, y dosis de distancia `D_d` de Titze, Švec y Popolo (2003) |
+| 0.6.0 | 2026-11-20 | Evaluación acústica PRE–POST (§23): /a/ sostenida y texto estándar analizados en memoria y borrados; F0, CPP/CPPS, HNR, LTAS, cepstro medio, jitter y shimmer exploratorios; EVA de esfuerzo, molestia y sequedad; registro `VOICE_ACOUSTIC_ASSESSMENT` |
+
+## 23. Evaluación acústica PRE–POST
+
+Evaluación breve y estandarizada al comienzo y al final de la jornada, distinta de la dosimetría continua. Aporta una tercera fuente de datos, independiente de las otras dos:
+
+| Dimensión | Qué mide | Variables |
+|---|---|---|
+| Exposición | Cómo se usó la voz | `D_k`, F0, intensidad, fonación, pausas |
+| Respuesta subjetiva | Cómo percibe la persona su voz | ΔF (fatiga), ΔE (esfuerzo), molestia, sequedad |
+| Respuesta acústica | Si cambió objetivamente la señal vocal | ΔCPPS, ΔHNR, ΔF0 y otras |
+
+La salida se denomina **«Cambio acústico PRE–POST»**, nunca «fatiga»: un cambio acústico no equivale a fatiga, y puede haber fatiga sin cambio acústico detectable. Los valores se muestran de forma descriptiva y sin puntos de corte clínicos durante la fase experimental.
+
+### 23.1 Protocolo
+
+En PRE y en POST se repite exactamente lo mismo: las mismas preguntas, la misma vocal, el mismo texto, el mismo celular y micrófono, la misma distancia y postura boca–micrófono, y el mismo algoritmo.
+
+1. EVA 0-100 de fatiga, esfuerzo, molestia y sequedad.
+2. Vocal /a/ sostenida, cómoda, a tono y volumen habituales: toma de 5 s.
+3. Lectura del texto estándar en voz de clase: toma de 25 s. El texto lleva unos 20 s y el silencio final se descarta como pausa.
+
+Cada toma empieza con 1 s de silencio, que sirve de referencia de ruido. El micrófono debe estar conectado y libre: la toma no se puede hacer mientras se mide la jornada.
+
+Texto estándar (`viento-norte-sol-v1`): redacción propia del proyecto de la fábula de Esopo «El viento norte y el sol», el pasaje que se usa en las ilustraciones fonéticas del Manual de la AFI.
+
+> El viento norte y el sol discutían cuál de los dos era el más fuerte, cuando vieron pasar a un viajero envuelto en una capa. Acordaron que ganaría quien lograra que el viajero se la quitara. El viento sopló con toda su fuerza, pero cuanto más soplaba, más se abrigaba el viajero. Entonces el sol brilló con calor y el viajero, sofocado, se quitó la capa. Así, el viento tuvo que reconocer que el sol era el más fuerte.
+
+### 23.2 Analizar y borrar
+
+El dosímetro no graba voz. La toma existe solo en memoria. Con Web Workers se transfiere al hilo de análisis, de modo que la página deja de tenerla; al terminar se sobrescribe con ceros. Una toma cancelada también se borra. La toma nunca se escribe en el almacenamiento, en el CSV ni en la red. Cada resultado lleva `audioRetained = false`, y los registros que digan lo contrario se rechazan.
+
+Como no se conserva audio, las medidas no se pueden recalcular si el algoritmo cambia. Por eso la versión del algoritmo y todos los parámetros de análisis se exportan con cada fila, y el método debe validarse contra Praat antes del uso de campo (§23.6). Se guardan además dos resúmenes promediados en el tiempo: el LTAS en bandas de 1/3 de octava desde 100 Hz, en dB relativos al total, y el cepstro suavizado medio entre 1 y 20 ms, cada 0,25 ms. Permiten recalcular algunas medidas espectrales y cepstrales, pero no el jitter ni el shimmer.
+
+### 23.3 Medidas
+
+El análisis se hace a 16 kHz (diezmado entero con filtro antialias); jitter y shimmer usan la frecuencia original de grabación.
+
+| Medida | Método | Tarea |
+|---|---|---|
+| F0 media, mediana, DE (Hz y semitonos), p5–p95 y rango en semitonos | YIN del proyecto (70-500 Hz, ventanas de 40 ms cada 10 ms); se excluyen las pausas por nivel | /a/ y texto |
+| Confianza de pitch | Periodicidad media de YIN en las tramas sonoras | /a/ y texto |
+| CPP | Hillenbrand. Preénfasis desde 50 Hz, Hann de 3/60 s, paso de 2 ms, pico entre 1/330 y 1/60 s, recta de tendencia por mínimos cuadrados desde 1 ms hasta el final del cepstro; promedio por trama | /a/ y texto |
+| CPPS | Igual que CPP, sobre el cepstro suavizado 10 ms en el tiempo y 1 ms en la quefrencia | /a/ y texto |
+| HNR | Correlación cruzada normalizada al período local, en ventanas de 3 períodos: `10·log10(r/(1−r))` | /a/ y texto |
+| Jitter local (%) | Marcas de ciclo por coincidencia de forma de onda, `mean|T_i − T_{i+1}| / mean T`, con los límites de Praat: 0,1-20 ms y factor 1,3 | Solo /a/, exploratorio |
+| Shimmer local (%) | Amplitud pico a pico por ciclo, `mean|A_i − A_{i+1}| / mean A`, factor 1,6 | Solo /a/, exploratorio |
+| Nivel | dBFS, o dB SPL si el micrófono está calibrado (§10) | /a/ y texto |
+
+Se prioriza CPPS por sobre jitter y shimmer: estos dos exigen una señal periódica y solo son apropiados en la vocal sostenida.
+
+### 23.4 Control de calidad inmediato
+
+Una toma defectuosa se detecta en el momento y se pide repetirla, porque no queda audio para revisar después.
+
+- SNR (nivel sonoro menos el nivel del silencio inicial): se rechaza por debajo de 20 dB y se advierte por debajo de 30 dB.
+- Saturación: se rechaza si más del 0,1 % de las muestras llega a fondo de escala.
+- Voz mínima: 2 s sonoros en la /a/ y 5 s en el texto.
+
+Las tomas rechazadas no se guardan. Las tomas con advertencia se guardan con esa marca.
+
+### 23.5 Datos y exportación
+
+Las EVA y los resultados se guardan en el navegador durante el día, para que el PRE de la mañana siga disponible en el POST. Al guardar la jornada pasan al registro `vd-des-workday/1`, en el campo `assessment`; la fatiga sigue en `fatigue`. El botón «Exportar evaluación (CSV)» genera el registro VD-DES `VOICE_ACOUSTIC_ASSESSMENT`, con una fila por momento (PRE/POST) y tarea (VOWEL/SPEECH). Cada fila incluye las medidas, la calidad de señal, la versión del algoritmo, los parámetros de pitch y cepstrales, la frecuencia de muestreo, el micrófono, la calibración, `audio_retained`, el LTAS y el cepstro medio.
+
+### 23.6 Validez y uso científico
+
+- Los valores son los de esta implementación. ANAGRAF y Praat no dan valores intercambiables: coinciden en F0, pero difieren en jitter, shimmer y HNR, sobre todo en voces irregulares. Antes de comparar con normas publicadas hay que validar contra Praat, con grabaciones de laboratorio de voluntarios (concordancia, por ejemplo mediante CCI). Esa validación no se hace con docentes reales.
+- En las señales sintéticas de prueba (`tests/voice-assessment.test.js` y `tests/voice-perturbation.test.js`):
+  - el ruido agregado baja CPP y CPPS;
+  - el HNR sigue al ruido agregado (±3 dB a 10 dB);
+  - las pausas no alteran el CPPS;
+  - un jitter de σ = 1 % se mide como 0,9 % y un shimmer de σ = 5 % como 4,1 %, porque cada ciclo medido mezcla dos ciclos sintéticos.
+- El cambio ΔA = A_POST − A_PRE se estudia primero variable por variable (`D_k` → ΔF, ΔE, ΔCPPS, ΔHNR, ΔF0). Un índice combinado se construiría después, con coeficientes estimados en una cohorte de desarrollo y validados externamente, nunca con pesos arbitrarios.

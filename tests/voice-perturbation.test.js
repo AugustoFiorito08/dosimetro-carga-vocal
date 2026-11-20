@@ -1,4 +1,4 @@
-// Exploratory jitter and shimmer (local, %) of the sustained vowel (spec §17).
+// Exploratory jitter and shimmer (local, %) of the sustained vowel (spec §23).
 // For Gaussian cycle-to-cycle variation with relative SD σ, the expected local value is
 // E|x_i - x_{i+1}| / mean = 2σ/√π ≈ 1.13 σ. The synthesiser changes period and amplitude
 // at phase 0 while the marks sit on the waveform peak, so each measured cycle mixes two

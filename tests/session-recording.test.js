@@ -1,4 +1,4 @@
-// In-memory PRE/POST assessment takes (spec §17).
+// In-memory PRE/POST assessment takes (spec §23).
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 

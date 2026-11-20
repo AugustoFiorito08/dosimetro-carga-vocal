@@ -1,7 +1,7 @@
 // Workday record (vd-des-workday/1): the summary of one measured session that the
 // dashboards aggregate. It never holds audio or per-frame data, only codes, doses,
 // percentiles, a per-minute dose timeline, context events, the fatigue VAS and, when done,
-// the PRE/POST voice assessment (VAS and acoustic measures; spec §17).
+// the PRE/POST voice assessment (VAS and acoustic measures; spec §23).
 import { describe } from '../stats/descriptive.js';
 import { SCORE_DOSES } from '../ui/score-series.js';
 import { TASKS, TIMEPOINTS } from './voice-assessment.js';

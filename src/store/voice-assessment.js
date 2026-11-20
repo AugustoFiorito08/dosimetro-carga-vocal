@@ -1,4 +1,4 @@
-// PRE/POST voice assessment of one workday (spec §17): the VAS and the acoustic results of
+// PRE/POST voice assessment of one workday (spec §23): the VAS and the acoustic results of
 // the standardised takes. Holds measures only, never audio; it survives a page reload
 // (local storage) so the morning PRE is still there for the afternoon POST.
 

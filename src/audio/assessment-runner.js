@@ -1,4 +1,4 @@
-// Analyse-and-discard boundary of the PRE/POST assessment (spec §17). With Web Workers
+// Analyse-and-discard boundary of the PRE/POST assessment (spec §23). With Web Workers
 // the take is transferred (the page's copy is detached) and analysed off the main thread;
 // without them it is analysed inline. Either way the samples are zeroed afterwards and
 // only the measures are returned.

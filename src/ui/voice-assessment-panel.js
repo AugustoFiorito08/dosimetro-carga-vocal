@@ -1,4 +1,4 @@
-// PRE/POST voice assessment controls (spec §17): VAS, guided takes analysed and discarded
+// PRE/POST voice assessment controls (spec §23): VAS, guided takes analysed and discarded
 // in memory, the PRE / POST / Δ table and the VOICE_ACOUSTIC_ASSESSMENT export.
 import { analyseAndDiscard } from '../audio/assessment-runner.js';
 import { MODES } from '../audio/session-controller.js';

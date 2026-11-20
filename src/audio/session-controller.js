@@ -219,7 +219,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
 
   /** Speaker similarity accept threshold (spec §12); applied at the next start(). */
   /**
-   * PRE/POST assessment take (spec §17): `leadInSeconds` of silence, then `seconds` of the
+   * PRE/POST assessment take (spec §23): `leadInSeconds` of silence, then `seconds` of the
    * task, held only in memory. The caller analyses and discards it; nothing is kept here,
    * and a cancelled take is zeroed.
    */

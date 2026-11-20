@@ -1,4 +1,4 @@
-// PRE/POST acoustic assessment (spec §17): F0, CPP/CPPS, HNR, LTAS and an average
+// PRE/POST acoustic assessment (spec §23): F0, CPP/CPPS, HNR, LTAS and an average
 // cepstrum of a short standardised recording (sustained /a/ or a read text), with
 // immediate quality control. Pure: the caller owns the samples and discards them after
 // the call; the result holds only measures and averaged spectra, never audio.
