@@ -782,7 +782,7 @@ Se prioriza CPPS por sobre jitter y shimmer: estos dos exigen una señal periód
 
 Una toma defectuosa se detecta en el momento y se pide repetirla, porque no queda audio para revisar después.
 
-- SNR (nivel sonoro menos el nivel del silencio inicial): se rechaza por debajo de 20 dB y se advierte por debajo de 30 dB.
+- SNR (nivel sonoro menos el nivel del silencio inicial): se rechaza por debajo de 20 dB y se advierte por debajo de 30 dB. El ruido se mide como el percentil 20 de las tramas del silencio inicial, sin sus primeros 150 ms. Así, el toque del botón o una voz que arranca un poco antes no cuentan como ruido de fondo. Si la voz ocupa la mitad o más del silencio inicial, el rechazo dice que se empezó antes de tiempo (`voice_in_lead_in`), en lugar de culpar al ruido. La interfaz pide silencio y muestra «¡Ahora!» al terminar ese segundo. El mensaje de rechazo informa el SNR medido.
 - Saturación: se rechaza si más del 0,1 % de las muestras llega a fondo de escala.
 - Voz mínima: 2 s sonoros en la /a/ y 5 s en el texto.
 

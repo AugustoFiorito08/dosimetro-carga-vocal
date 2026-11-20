@@ -11,6 +11,7 @@ const STORAGE_KEY = 'dosimetro.voice-assessment';
 const TASK_LABELS = { VOWEL: '/a/', SPEECH: 'Texto' };
 const QUALITY_LABELS = {
   low_snr: 'ruido de fondo alto',
+  voice_in_lead_in: 'empezaste antes de tiempo: quedate en silencio hasta que aparezca «¡Ahora!»',
   marginal_snr: 'ruido de fondo moderado',
   clipping: 'saturación: alejá un poco el celular o hablá más suave',
   too_little_voice: 'poca voz: sostené la /a/ o leé el texto completo',
@@ -21,7 +22,14 @@ const pad = (n) => String(n).padStart(2, '0');
 const today = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const num = (v, digits) => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(digits) : '—');
 const signed = (v, digits) => (typeof v === 'number' && Number.isFinite(v) ? `${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(v).toFixed(digits)}` : '—');
-const reasons = (r) => r.quality.reasons.map((k) => QUALITY_LABELS[k] ?? k).join('; ');
+const SNR_REASONS = new Set(['low_snr', 'marginal_snr']);
+const reasons = (r) => r.quality.reasons
+  .map((k) => (SNR_REASONS.has(k) && Number.isFinite(r.snrDb) ? `${QUALITY_LABELS[k]}: SNR ${r.snrDb.toFixed(0)} dB, mínimo 20 y recomendado 30` : QUALITY_LABELS[k] ?? k))
+  .join('; ');
+const START_CUES = {
+  VOWEL: '¡Ahora! Sostené una /a/ cómoda, a tu tono y volumen habituales, hasta que termine.',
+  SPEECH: '¡Ahora! Leé el texto en voz alta, como hablás en clase.',
+};
 
 /**
  * @param {{ $: (id: string) => HTMLElement, say: (text: string, tone?: string) => void,
@@ -69,11 +77,16 @@ export function createVoiceAssessmentPanel({ $, say, getSession, getMicrophone, 
     busy = true;
     const block = $(`va-${timepoint.toLowerCase()}`);
     if (task === 'SPEECH') block.querySelector('.va-text').open = true;
+    let cued = false;
+    const unsubscribe = session.subscribe((event) => {
+      if (event.type !== 'progress' || event.mode !== MODES.RECORDING || cued || event.elapsed < event.leadInSeconds) return;
+      cued = true;
+      say(START_CUES[task]);
+    });
     try {
-      say(task === 'VOWEL'
-        ? 'Quedate en silencio 1 s; después sostené una /a/ cómoda, a tu tono y volumen habituales, hasta que termine.'
-        : 'Quedate en silencio 1 s; después leé el texto en voz alta, como hablás en clase.');
+      say('Silencio… no hables todavía. Esperá a que aparezca «¡Ahora!».');
       const samples = await session.recordSample({ seconds: RECORDING_SECONDS[task], leadInSeconds: 1 });
+      unsubscribe();
       say('Analizando la muestra… el audio se borra al terminar.');
       const pressureScale = session.acousticCalibration?.coefficient ?? null;
       const result = await analyseAndDiscard(samples, session.sampleRate, { task, pressureScale });
@@ -90,6 +103,7 @@ export function createVoiceAssessmentPanel({ $, say, getSession, getMicrophone, 
     } catch (error) {
       say(`Muestra ${TASK_LABELS[task]}: ${error.message}`, 'error');
     } finally {
+      unsubscribe();
       busy = false;
     }
   }

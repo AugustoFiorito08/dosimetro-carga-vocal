@@ -43,6 +43,11 @@ export const DEFAULT_ASSESSMENT_CONFIG = Object.freeze({
     warnSnrDb: 30,
     clipLevel: 0.999,
     maxClipFraction: 0.001,
+    // Noise reference: a low percentile of the lead-in frames after the button tap, so a
+    // tap or a voice that starts a little early does not count as background noise.
+    leadInSkipSeconds: 0.15,
+    noisePercentile: 0.2,
+    earlyVoiceFraction: 0.5, // lead-in mostly voiced: the person started too early
     minVoicedSeconds: Object.freeze({ VOWEL: 2, SPEECH: 5 }),
   }),
 });
@@ -469,7 +474,10 @@ export function analyseVoiceSample(samples, sampleRate, { task, pressureScale = 
   const hasVoice = voiced.length > 0;
 
   const levelDbfs = hasVoice ? energyMeanDb(voiced.map((f) => f.rms)) : null;
-  const noiseDbfs = toDb(frameRms(leadIn));
+  const leadFrames = pitchTrack(leadIn.subarray(Math.round(cfg.quality.leadInSkipSeconds * fs)), fs, cfg.pitch, Infinity);
+  const noiseDbfs = leadFrames.length ? quantile(leadFrames.map((f) => f.levelDb), cfg.quality.noisePercentile) : toDb(frameRms(leadIn));
+  const earlyVoice = hasVoice && leadFrames.length > 0
+    && leadFrames.filter((f) => f.f0 !== null && f.levelDb >= levelDbfs - cfg.quality.rejectSnrDb).length / leadFrames.length >= cfg.quality.earlyVoiceFraction;
   const snrDb = hasVoice ? levelDbfs - noiseDbfs : null;
   const cepstral = hasVoice ? cepstralAnalysis(x, fs, cfg.cepstral, cfg.ltas, cfg.cepstrum) : null;
 
@@ -499,7 +507,7 @@ export function analyseVoiceSample(samples, sampleRate, { task, pressureScale = 
   const q = cfg.quality;
   const reasons = [];
   if (!hasVoice || voicedSeconds < q.minVoicedSeconds[task]) reasons.push('too_little_voice');
-  if (snrDb === null || snrDb < q.rejectSnrDb) reasons.push('low_snr');
+  if (snrDb === null || snrDb < q.rejectSnrDb) reasons.push(earlyVoice ? 'voice_in_lead_in' : 'low_snr');
   else if (snrDb < q.warnSnrDb) reasons.push('marginal_snr');
   if (clipFraction > q.maxClipFraction) reasons.push('clipping');
   const status = reasons.length === 0 ? 'ok' : reasons.every((r) => r === 'marginal_snr') ? 'warning' : 'rejected';
