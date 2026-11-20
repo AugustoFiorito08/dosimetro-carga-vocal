@@ -20,6 +20,7 @@ export const MODES = Object.freeze({
   CALIBRATING: 'calibrating',
   ACOUSTIC_CALIBRATING: 'acoustic_calibrating',
   ENROLLING: 'enrolling',
+  RECORDING: 'recording',
   MEASURING: 'measuring',
   PAUSED: 'paused',
 });
@@ -217,6 +218,28 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
   }
 
   /** Speaker similarity accept threshold (spec §12); applied at the next start(). */
+  /**
+   * PRE/POST assessment take (spec §17): `leadInSeconds` of silence, then `seconds` of the
+   * task, held only in memory. The caller analyses and discards it; nothing is kept here,
+   * and a cancelled take is zeroed.
+   */
+  function recordSample({ seconds, leadInSeconds = 1 } = {}) {
+    if (!(seconds > 0) || !(leadInSeconds >= 0)) return Promise.reject(new RangeError('recordSample needs seconds > 0 and leadInSeconds >= 0'));
+    const buffer = new Float32Array(Math.ceil((seconds + leadInSeconds) * sampleRate));
+    let filled = 0;
+    const take = beginTask(MODES.RECORDING, (samples) => {
+      const n = Math.min(samples.length, buffer.length - filled);
+      buffer.set(samples.subarray(0, n), filled);
+      filled += n;
+      emit({ type: 'progress', mode, elapsed: filled / sampleRate, target: buffer.length / sampleRate, leadInSeconds });
+      if (filled >= buffer.length) task.resolve(buffer);
+    });
+    return take.catch((error) => {
+      buffer.fill(0);
+      throw error;
+    });
+  }
+
   function setSimilarityThreshold(value) {
     if (!(value > 0 && value <= 1)) throw new RangeError(`similarity threshold must be in (0, 1], got ${value}`);
     similarityThreshold = value;
@@ -363,6 +386,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     handleMessage,
     calibrate,
     enroll,
+    recordSample,
     start,
     pause,
     resume,

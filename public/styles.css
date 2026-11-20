@@ -319,6 +319,20 @@ select, input[type='number'] {
 }
 .step input:invalid { border-color: var(--danger); }
 
+.assessment { display: grid; gap: 8px; margin: 0; padding: 8px 10px 10px; border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
+.assessment legend { padding: 0 4px; font-size: 12px; font-weight: 600; color: var(--text); }
+.vas-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.va-text summary { cursor: pointer; font-size: 12px; color: var(--accent); }
+.va-text-body { margin: 6px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--panel-raised); font-size: 15px; line-height: 1.5; color: var(--text); }
+.va-results { display: grid; gap: 6px; }
+.va-results-title { margin: 0; font-size: 13px; }
+.va-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+.va-table th, .va-table td { padding: 3px 4px; border-bottom: 1px solid var(--line); text-align: right; overflow-wrap: anywhere; }
+.va-table th:first-child, .va-table td:first-child { text-align: left; width: 40%; }
+.va-table thead th { color: var(--muted); font-weight: 500; }
+.va-table td { font-family: var(--font-data); }
+.va-table td:first-child { font-family: var(--font-ui); color: var(--muted); }
+
 .board-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 12px; color: var(--muted); }
 .board-bar label { display: flex; align-items: center; gap: 6px; }
 .board-count { font-family: var(--font-data); }
