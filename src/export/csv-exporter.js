@@ -1,7 +1,7 @@
 // Spec §13 — per-frame CSV export (RFC 4180: comma separator, dot decimal, CRLF).
 import { splFromPressure } from '../dsp/acoustic-calibration.js';
 
-export const ALGORITHM_VERSION = '0.5.0';
+export const ALGORITHM_VERSION = '0.6.0';
 
 /** Mandatory columns of spec §13, in order. New columns are appended so positional readers keep working. */
 export const CSV_COLUMNS = Object.freeze([

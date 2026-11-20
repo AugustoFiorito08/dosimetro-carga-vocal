@@ -51,4 +51,13 @@ describe('assessment runner', () => {
     }
     await assert.rejects(analyseAndDiscard(take(), FS, { task: 'VOWEL' }, { WorkerClass: FailingWorker }), /boom/);
   });
+
+  it('with workers: zeroes the samples when the worker cannot start', async () => {
+    class BrokenWorker {
+      constructor() { throw new Error('module workers blocked'); }
+    }
+    const samples = take();
+    await assert.rejects(analyseAndDiscard(samples, FS, { task: 'VOWEL' }, { WorkerClass: BrokenWorker }), /blocked/);
+    assert.ok(samples.every((v) => v === 0));
+  });
 });

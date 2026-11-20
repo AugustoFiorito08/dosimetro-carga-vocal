@@ -1,4 +1,4 @@
-// VD-DES record VOICE_ACOUSTIC_ASSESSMENT (spec §17): one CSV row per timepoint × task.
+// VD-DES record VOICE_ACOUSTIC_ASSESSMENT (spec §23): one CSV row per timepoint × task.
 // Method, version and analysis settings go with every row, because values from different
 // tools (ANAGRAF, Praat, this one) are not interchangeable.
 import { ALGORITHM_VERSION, formatNumber, serializeCsvRow, serializeParameters } from './csv-exporter.js';

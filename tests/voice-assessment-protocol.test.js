@@ -67,6 +67,8 @@ describe('assessment state', () => {
     assert.deepEqual(restoreAssessment('{bad', '2026-11-20'), createAssessment('2026-11-20'));
     const leaky = { ...s, PRE: { ...s.PRE, VOWEL: { ...s.PRE.VOWEL, audioRetained: true } } };
     assert.deepEqual(restoreAssessment(JSON.stringify(leaky), '2026-11-20'), createAssessment('2026-11-20'));
+    const smuggled = { ...s, PRE: { ...s.PRE, VOWEL: { ...s.PRE.VOWEL, samples: Array(16000).fill(0.1) } } };
+    assert.deepEqual(restoreAssessment(JSON.stringify(smuggled), '2026-11-20'), createAssessment('2026-11-20'));
   });
 });
 
@@ -88,6 +90,7 @@ describe('assessment in the workday record', () => {
     const a = workdayAssessment(filled());
     assert.throws(() => validateWorkday({ ...base, assessment: { ...a, results: [{ ...a.results[0], audioRetained: true }] } }), /audio/);
     assert.throws(() => validateWorkday({ ...base, assessment: { ...a, results: [{ ...a.results[0], timepoint: 'X' }] } }), RangeError);
+    assert.throws(() => validateWorkday({ ...base, assessment: { ...a, results: [{ ...a.results[0], frames: new Array(5000).fill(0) }] } }), /audio/);
     assert.throws(() => validateWorkday({ ...base, assessment: { ...a, vas: { effort: { pre: 120, post: null } } } }), RangeError);
   });
 });
@@ -115,6 +118,7 @@ describe('VOICE_ACOUSTIC_ASSESSMENT export', () => {
     assert.ok(Math.abs(Number(vowel.cpps_db) - pre.cpps) < 1e-6);
     assert.equal(vowel.cepstrum_db.split(' ').length, 77);
     assert.equal(vowel.ltas_db.split(' ').length, vowel.ltas_centers_hz.split(' ').length);
-    assert.equal(vowel.jitter_local_pct, '');
+    assert.ok(Number(vowel.jitter_local_pct) >= 0 && vowel.shimmer_local_pct !== '', 'vowel rows carry jitter and shimmer');
+    assert.equal(cells(2).jitter_local_pct, '', 'not computed on the text');
   });
 });

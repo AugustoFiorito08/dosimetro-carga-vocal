@@ -114,6 +114,27 @@ describe('voice assessment: quality control', () => {
     assert.deepEqual(r.quality.reasons, ['marginal_snr']);
   });
 
+  it('a voice that starts during the second half of the silent lead-in is still a valid take', () => {
+    const vowel = sustainedVowel({ sampleRate: FS, seconds: 4.6 });
+    const early = withLeadIn(vowel, 0.6, FS); // starts 0.4 s before the lead-in ends
+    const r = analyse(early);
+    assert.equal(r.quality.status, 'ok', `reasons ${r.quality.reasons} snr ${r.snrDb}`);
+  });
+
+  it('says so when the voice fills the silent lead-in (started too early)', () => {
+    const r = analyse(sustainedVowel({ sampleRate: FS, seconds: 5 }));
+    assert.equal(r.quality.status, 'rejected');
+    assert.deepEqual(r.quality.reasons, ['voice_in_lead_in']);
+  });
+
+  it('ignores the tap of the record button at the start of the lead-in', () => {
+    const take = recording();
+    for (let i = 0; i < 0.03 * FS; i++) take[i] = 0.5 * Math.sin(i / 3) * Math.exp(-i / 80);
+    const r = analyse(take);
+    assert.equal(r.quality.status, 'ok', `reasons ${r.quality.reasons} snr ${r.snrDb}`);
+    assert.ok(r.snrDb > 30);
+  });
+
   it('rejects a clipped take', () => {
     const r = analyse(recording().map((v) => Math.max(-0.2, Math.min(0.2, v)) * 5));
     assert.equal(r.quality.status, 'rejected');

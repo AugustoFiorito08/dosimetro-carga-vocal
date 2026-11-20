@@ -1,10 +1,10 @@
 // Workday record (vd-des-workday/1): the summary of one measured session that the
 // dashboards aggregate. It never holds audio or per-frame data, only codes, doses,
 // percentiles, a per-minute dose timeline, context events, the fatigue VAS and, when done,
-// the PRE/POST voice assessment (VAS and acoustic measures; spec §17).
+// the PRE/POST voice assessment (VAS and acoustic measures; spec §23).
 import { describe } from '../stats/descriptive.js';
 import { SCORE_DOSES } from '../ui/score-series.js';
-import { TASKS, TIMEPOINTS } from './voice-assessment.js';
+import { TASKS, TIMEPOINTS, retainsAudio } from './voice-assessment.js';
 
 export const WORKDAY_SCHEMA = 'vd-des-workday/1';
 
@@ -101,7 +101,7 @@ function validateAssessment(a) {
   }
   for (const r of a.results ?? []) {
     if (!TIMEPOINTS.includes(r.timepoint) || !TASKS.includes(r.task)) throw new RangeError(`assessment result needs a PRE/POST timepoint and a VOWEL/SPEECH task`);
-    if (r.audioRetained !== false) throw new RangeError('assessment results must not retain audio');
+    if (retainsAudio(r)) throw new RangeError('assessment results must not retain audio');
   }
 }
 
