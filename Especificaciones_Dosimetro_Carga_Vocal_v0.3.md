@@ -323,6 +323,29 @@ Con calibración acústica (§5.1), `P_k` está en Pa y `P_0 = 1 Pa` (94 dB SPL)
 
 Si no existe calibración, los resultados deben rotularse como relativos. La presión captada por el micrófono no equivale directamente a presión subglótica ni a presión de colisión de los pliegues vocales.
 
+### 10.1 Intensidad normalizada a la voz propia (sin calibración)
+
+En el protocolo de estudio cada participante usa su propio celular, con una diadema del mismo tipo y marca a 1–2 cm de la boca, y no hay sonómetro. La sensibilidad de cada celular es distinta: con `I_k = (P_k / P_0)^2` sobre la amplitud digital, la misma voz en un celular 12 dB más sensible daba **16 veces** más dosis. Sin calibración acústica, la intensidad se normaliza a la voz normal de cada participante:
+
+```text
+I_k = (P_k / P_ref)^2 = 10^((L_k − L_ref) / 10)
+```
+
+- `L_ref` es la mediana del nivel de las tramas sonoras válidas de la **primera mitad del enrolamiento**, la de voz normal, según la guía. Se mide cada día, con la diadema ya colocada, porque el enrolamiento es obligatorio antes de iniciar. Una nueva calibración del ambiente la descarta junto con el perfil.
+- La sensibilidad del celular afecta por igual a `P_k` y a `P_ref`, así que se cancela. `I = 1` es la voz normal de la persona, `I ≈ 4` equivale a +6 dB sobre ella y `I = 10` a +10 dB.
+- Las unidades se rotulan `normalized`. `L_ref` se exporta como `ownVoiceRefDbfs` en los parámetros del CSV y como `ownVoiceRefDbfs` en la jornada; el CSV de los tableros lo incluye en `own_voice_ref_dbfs`.
+- `H` depende solo de la fonación (§9), no de `I`, así que no cambia; las constantes de `f(H)` tampoco.
+- Con esta normalización, `D_0` se lee como **ciclos equivalentes a voz normal**: hablar todo el día a voz normal da `D_0 = D_c`. Los modelos con memoria ponderan además por la carga reciente.
+- Con calibración acústica se mantiene la presión en Pa (§10) y no se normaliza.
+
+Interpretación y límites:
+
+- La dosis normalizada mide el **esfuerzo relativo a la propia voz**, no la exposición acústica absoluta. Una persona cuya voz normal ya es fuerte aparece con `I ≈ 1` hablando así. La hipótesis de trabajo es que el esfuerzo relativo explica la fatiga. Se pone a prueba comparando qué exposición predice mejor ΔF, ΔE y ΔCPPS: `D_c`, `D_0` o los modelos con memoria.
+- No permite un TLV de intensidad absoluto. Los límites transferibles en unidades físicas se derivan de `D_t` y `D_c`, que no dependen de la calibración.
+- Un error en `L_ref` multiplica toda la jornada por `10^(error/10)`: 1 dB equivale a ×1,26 y 3 dB a ×2. Por eso hay que mantener estable la colocación de la diadema y enrolar con la voz habitual, no forzada. Conviene analizar `log(D_k)` y vigilar la estabilidad de `L_ref` de cada participante entre días.
+- La normalización supone que el celular no aplica control automático de ganancia. Si lo aplica, el nivel deja de reflejar el esfuerzo (§4.2).
+- La dosis de distancia `D_d` necesita SPL absoluto (sonómetro) y no está disponible en este protocolo. Su motor se conserva, pero la interfaz la oculta.
+
 ## 11. Modelos matemáticos implementados
 
 Todos los modelos utilizan la misma señal, `F0_k`, `I_k`, `Phi_k`, `H_k` y `Delta_t`.
@@ -728,6 +751,7 @@ La salida correcta es un índice experimental de carga vocal calculada. No debe 
 | 0.3.2 | 2026-11-13 | Filtro pasa-altos de 50 Hz en la entrada; corte registrado en los parámetros exportados |
 | 0.4.0 | 2026-11-18 | Calibración acústica con tono de referencia, deriva pre/post, presión en Pa y nivel en dB SPL en el CSV, `P_0 = 1 Pa` con calibración, y dosis de distancia `D_d` de Titze, Švec y Popolo (2003) |
 | 0.6.0 | 2026-11-20 | Evaluación acústica PRE–POST (§23): /a/ sostenida y texto estándar analizados en memoria y borrados; F0, CPP/CPPS, HNR, LTAS, cepstro medio, jitter y shimmer exploratorios; EVA de esfuerzo, molestia y sequedad; registro `VOICE_ACOUSTIC_ASSESSMENT` |
+| 0.7.0 | 2026-11-22 | Intensidad normalizada a la voz propia sin calibración (§10.1): `I = 1` a la voz normal del enrolamiento, dosis comparables entre celulares, `ownVoiceRefDbfs` en la jornada y en los CSV; `D_d` oculta en la interfaz |
 
 ## 23. Evaluación acústica PRE–POST
 
