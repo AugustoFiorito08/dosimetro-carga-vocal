@@ -51,6 +51,11 @@ const MODE_LABELS = {
   [MODES.PAUSED]: 'En pausa',
 };
 const DOSE_MODELS = ['none', 'linear', 'power', 'exponential', 'saturating'];
+const DOSE_UNITS_TEXT = {
+  calibrated: () => 'Presión calibrada en Pa.',
+  normalized: (load) => `Intensidad relativa a tu voz normal (I = 1 a ${fixed(load.ownVoiceReferenceDbfs, 1)} dBFS): ciclos equivalentes a voz normal.`,
+  relative: () => 'Unidades relativas (sin calibración de presión).',
+};
 const START_ERRORS = {
   distance_dose_needs_calibration:
     'No se inició la sesión: la dosis de distancia necesita la calibración acústica. Calibrá con el tono de referencia o elegí «Sin dosis de distancia».',
@@ -358,7 +363,9 @@ el.enroll.addEventListener('click', () =>
     }
     const range = manager.session.profile?.f0Range;
     const f0 = range ? ` Tu tono: ${Math.round(range.low)}-${Math.round(range.high)} Hz.` : '';
-    return `Perfil creado${quality === null ? '' : `: reconoce el ${percent(quality)} de tu voz de prueba`}.${f0} Ya podés iniciar.`;
+    const ref = manager.session.voiceReference;
+    const level = ref ? ` Tu voz normal: ${fixed(ref.levelDbfs, 1)} dBFS (referencia de intensidad).` : '';
+    return `Perfil creado${quality === null ? '' : `: reconoce el ${percent(quality)} de tu voz de prueba`}.${f0}${level} Ya podés iniciar.`;
   }),
 );
 
@@ -397,7 +404,7 @@ el.start.addEventListener('click', () => {
     workdaySaved = false;
     renderWorkdayEvents();
     setText($('jr-status'), 'Midiendo…');
-    setText(el['dose-units'], load.units === 'relative' ? 'Unidades relativas (sin calibración de presión).' : 'Presión calibrada en Pa.');
+    setText(el['dose-units'], DOSE_UNITS_TEXT[load.units](load));
     say('Sesión en curso.');
   } catch (error) {
     say(START_ERRORS[error.code] ?? error.message, 'error');

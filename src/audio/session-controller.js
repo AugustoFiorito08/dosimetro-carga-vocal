@@ -3,7 +3,8 @@
 import { DEFAULT_CALIBRATION_CONFIG, calibrationDrift, computeCalibration } from '../dsp/acoustic-calibration.js';
 import { classifyFrame, createFrameClassifier } from '../dsp/frame-classifier.js';
 import { createHighPassFilter } from '../dsp/high-pass.js';
-import { calibrateNoiseFloor, framePeak, frameRms } from '../dsp/signal-quality.js';
+import { calibrateNoiseFloor, framePeak, frameRms, toDb } from '../dsp/signal-quality.js';
+import { quantile } from '../stats/descriptive.js';
 import { DEFAULT_IDENTITY_CONFIG, enrollProfile, ownAcceptance } from '../dsp/speaker-profile.js';
 import {
   ALGORITHM_VERSION,
@@ -57,6 +58,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
   let noiseFloorRms = null;
   let profile = null;
   let enrolFrameDuration = null;
+  let voiceReference = null; // { rms, levelDbfs, seconds } of the normal voice in the enrolment (spec §10.1)
   let task = null; // { resolve, reject, onFrame } of the running calibration / enrolment
   let classifier = null;
   let load = null;
@@ -106,6 +108,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
       if (elapsed >= cfg.calibrationSeconds) {
         noiseFloorRms = calibrateNoiseFloor(levels, classifierConfig?.quality);
         profile = null; // a new acoustic baseline invalidates the previous enrolment
+        voiceReference = null;
         task.resolve(noiseFloorRms);
       }
     });
@@ -160,6 +163,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     let state = createFrameClassifier({ config: classifierConfig, noiseFloorRms });
     const vectors = [];
     const f0s = [];
+    const normalVoiceRms = []; // first half of the valid voice: the normal voice the guide asks for
     let validTime = 0;
     let elapsed = 0;
     let frameDuration = 0;
@@ -172,6 +176,8 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
           f0: f0s,
         });
         enrolFrameDuration = frameDuration;
+        const rms = quantile(normalVoiceRms, 0.5);
+        voiceReference = Object.freeze({ rms, levelDbfs: toDb(rms), seconds: normalVoiceRms.length * frameDuration });
         task.resolve(profile);
       } catch (error) {
         task.reject(error);
@@ -185,6 +191,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
       if (result.analysis.V === 1 && result.analysis.Q === 1) {
         vectors.push(result.analysis.features);
         f0s.push(result.analysis.f0);
+        if (validTime < cfg.enrollTargetSeconds / 2) normalVoiceRms.push(result.analysis.rms);
         validTime += dt;
       }
       latest = { analysis: result.analysis, load: null };
@@ -267,12 +274,16 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     postCalibration = null;
     drift = null;
     const calibrated = sessionCalibration !== null;
-    const calibration = calibrated ? { pressureScale: sessionCalibration.coefficient } : {};
+    // Without calibration the intensity is normalised to the own normal voice: I = 1 there.
+    const normalized = !calibrated && voiceReference !== null;
+    const calibration = calibrated
+      ? { pressureScale: sessionCalibration.coefficient }
+      : normalized ? { pressureScale: 1 / voiceReference.rms } : {};
     classifier = createFrameClassifier({ profile, config: { ...classifierConfig, identity, ...calibration }, noiseFloorRms });
     load = createVocalLoadState(
       calibrated
         ? { referencePressure: cfg.calibratedReferencePressure, ...loadOptions, calibrated: true, distanceDose: distanceDoseInput ?? undefined }
-        : loadOptions,
+        : { ...loadOptions, ownVoiceReferenceDbfs: normalized ? voiceReference.levelDbfs : null },
     );
     const { pitch, quality, identity: id, noisePeriodicityMax, minVocalBandRatio } = classifier.config;
     sessionParams = {
@@ -282,6 +293,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
         ...load.params,
         units: load.units,
         referencePressure: load.referencePressure,
+        ownVoiceRefDbfs: load.ownVoiceReferenceDbfs ?? undefined,
         noiseFloorRms,
         prototypes: profile.prototypes.length,
         acceptThreshold: id.acceptThreshold,
@@ -407,6 +419,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     get calibrationDrift() { return drift; },
     get distanceDoseOptions() { return distanceDoseOptions; },
     get profile() { return profile; },
+    get voiceReference() { return voiceReference; },
     get load() { return load; },
     get latest() { return latest; },
     get stats() { return { ...stats }; },

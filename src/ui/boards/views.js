@@ -245,10 +245,10 @@ export function renderAnalytics(root, workdays, state) {
 /** CSV of the workday summaries (one row per workday, no audio, codes only). */
 export function summariesCsv(workdays) {
   const cols = ['id', 'participantId', 'schoolId', 'classroom', 'date', 'durationS', 'phonationS', 'validRatio',
-    'd_0', 'd_l', 'd_p', 'd_e', 'd_s', 'd_d', 'd_t', 'd_c', 'hMax', 'f0_p50', 'level_p50', 'units', 'fatigue_pre', 'fatigue_post', 'source', 'algorithmVersion'];
+    'd_0', 'd_l', 'd_p', 'd_e', 'd_s', 'd_d', 'd_t', 'd_c', 'hMax', 'f0_p50', 'level_p50', 'units', 'fatigue_pre', 'fatigue_post', 'source', 'algorithmVersion', 'own_voice_ref_dbfs'];
   const cell = (v) => (v === null || v === undefined || (typeof v === 'number' && !Number.isFinite(v)) ? '' : /[",\r\n]/.test(String(v)) ? `"${String(v).replaceAll('"', '""')}"` : String(v));
   const rows = workdays.map((w) => [w.id, w.participantId, w.schoolId, w.classroom, w.date, w.durationS, w.phonationS, w.validRatio,
     w.doses.none, w.doses.linear, w.doses.power, w.doses.exponential, w.doses.saturating, w.doses.distance, w.doses.time, w.doses.cycle,
-    w.hMax, w.f0?.p50, w.level?.p50, w.units, w.fatigue.pre, w.fatigue.post, w.source, w.algorithmVersion].map(cell).join(','));
+    w.hMax, w.f0?.p50, w.level?.p50, w.units, w.fatigue.pre, w.fatigue.post, w.source, w.algorithmVersion, w.ownVoiceRefDbfs].map(cell).join(','));
   return [cols.join(','), ...rows].join('\r\n') + '\r\n';
 }

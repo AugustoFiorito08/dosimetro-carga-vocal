@@ -4,14 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
-    <title>Dosímetro de Carga Vocal v0.6.0</title>
+    <title>Dosímetro de Carga Vocal v0.7.0</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <header class="topbar">
       <div class="brand">
         <h1>Dosímetro de carga vocal</h1>
-        <span class="version">v0.6.0 · experimental</span>
+        <span class="version">v0.7.0 · experimental</span>
       </div>
       <div class="session-state" aria-live="polite">
         <span class="state-dot" id="mode-dot" aria-hidden="true"></span>
@@ -48,7 +48,8 @@
             <button id="cal-post" type="button" class="btn" disabled>Verificar tras la sesión (5 s)</button>
             <p class="hint" id="cal-drift">Opcional. Sin calibración, la presión y las dosis quedan en unidades relativas.</p>
           </li>
-          <li class="step" id="step-distance">
+          <!-- Distance dose D_d: needs a sound level meter; hidden in the study protocol (spec §10.1). -->
+          <li class="step" id="step-distance" hidden>
             <div class="step-head">
               <label class="step-title" for="dd-profile">Dosis de distancia</label>
               <span class="step-value" id="dd-status">Desactivada</span>
@@ -205,7 +206,7 @@
           <article class="kpi"><h3>Tiempo sin fonación</h3><p class="value"><span id="kpi-nonphonation-time">—</span></p></article>
           <article class="kpi"><h3>Episodios</h3><p class="value"><span id="kpi-episodes">—</span></p></article>
           <article class="kpi"><h3>Pausa media</h3><p class="value"><span id="kpi-pause">—</span><small>s</small></p></article>
-          <article class="kpi">
+          <article class="kpi" hidden>
             <h3>Dosis de distancia</h3>
             <p class="value"><span id="kpi-distance">—</span><small>m</small></p>
             <p class="sub" id="kpi-distance-note">Elegí un perfil y calibrá antes de iniciar.</p>
@@ -261,7 +262,7 @@
                 <option value="power">DP · potencial</option>
                 <option value="exponential">DE · exponencial</option>
                 <option value="saturating">DS · saturante</option>
-                <option value="distance" disabled>Dd · distancia (m)</option>
+                <option value="distance" disabled hidden>Dd · distancia (m)</option>
               </select>
             </div>
           </div>

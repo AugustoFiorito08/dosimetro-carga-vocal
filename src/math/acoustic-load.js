@@ -15,7 +15,12 @@ export function normalizedAcousticLoad(pressure, reference = 1) {
   return ratio * ratio;
 }
 
-/** @returns {'calibrated' | 'relative'} */
-export function acousticLoadUnits(calibrated) {
-  return calibrated === true ? 'calibrated' : 'relative';
+/**
+ * 'calibrated': P_k in Pa; 'normalized': P_k relative to the speaker's own normal voice
+ * (I = 1 at that voice, spec §10.1); 'relative': uncalibrated digital magnitude.
+ * @returns {'calibrated' | 'normalized' | 'relative'}
+ */
+export function acousticLoadUnits(calibrated, normalized = false) {
+  if (calibrated === true) return 'calibrated';
+  return normalized === true ? 'normalized' : 'relative';
 }

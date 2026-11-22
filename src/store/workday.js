@@ -84,6 +84,7 @@ export function buildWorkday({ meta, load, series, startedAt, algorithmVersion, 
     f0: summary(series.voicedValues('f0')),
     level: summary(series.voicedValues('level')),
     units: load.units,
+    ownVoiceRefDbfs: load.ownVoiceReferenceDbfs ?? null, // level of I = 1 when units are 'normalized' (spec §10.1)
     timeline: minuteTimeline(series),
     events: (meta.events ?? []).map((e) => ({ ...e })),
     fatigue: { pre: meta.fatiguePre ?? null, post: meta.fatiguePost ?? null },
