@@ -81,10 +81,10 @@ describe('acoustic calibration in the session flow', () => {
     assert.match(col(row, 'parameters'), /;calRefDbSpl=94;calCoefficient=[\d.]+$/);
   });
 
-  it('without calibration, pressure_pa and spl_db stay empty and units stay relative', async () => {
+  it('without calibration, pressure_pa and spl_db stay empty and the intensity is normalised to the own voice', async () => {
     const ctx = newSession();
     await prepare(ctx);
-    assert.equal(ctx.session.start().units, 'relative');
+    assert.equal(ctx.session.start().units, 'normalized');
     ctx.send(voice, 2);
     ctx.session.stop();
     for (const row of rowsOf(ctx.session)) {

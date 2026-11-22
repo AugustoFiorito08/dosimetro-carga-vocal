@@ -49,5 +49,8 @@ describe('dashboard views', () => {
     const csv = summariesCsv(days.slice(0, 5)).trimEnd().split('\r\n');
     assert.equal(csv.length, 6);
     assert.match(csv[0], /^id,participantId,schoolId,classroom,date/);
+    assert.match(csv[0], /,units,.*,own_voice_ref_dbfs$/, 'units and the own-voice reference travel with each workday');
+    const [row] = summariesCsv([{ ...days[0], units: 'normalized', ownVoiceRefDbfs: -31.5 }]).trimEnd().split('\r\n').slice(1);
+    assert.match(row, /,normalized,.*,-31\.5$/);
   });
 });

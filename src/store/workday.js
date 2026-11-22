@@ -1,8 +1,10 @@
 // Workday record (vd-des-workday/1): the summary of one measured session that the
 // dashboards aggregate. It never holds audio or per-frame data, only codes, doses,
-// percentiles, a per-minute dose timeline, context events and the fatigue VAS.
+// percentiles, a per-minute dose timeline, context events, the fatigue VAS and, when done,
+// the PRE/POST voice assessment (VAS and acoustic measures; spec §23).
 import { describe } from '../stats/descriptive.js';
 import { SCORE_DOSES } from '../ui/score-series.js';
+import { TASKS, TIMEPOINTS, retainsAudio } from './voice-assessment.js';
 
 export const WORKDAY_SCHEMA = 'vd-des-workday/1';
 
@@ -58,7 +60,8 @@ function minuteTimeline(series) {
 /**
  * @param {object} args
  * @param {{ participantId: string, schoolId: string, classroom: string, fatiguePre: number | null,
- *   fatiguePost: number | null, events?: { t: number, type: string, source: string, note?: string }[] }} args.meta
+ *   fatiguePost: number | null, events?: { t: number, type: string, source: string, note?: string }[],
+ *   assessment?: ReturnType<import('./voice-assessment.js').workdayAssessment> | null }} args.meta
  * @param {object} args.load final vocal-load state
  * @param {ReturnType<import('../ui/score-series.js').createScoreSeries>} args.series
  * @param {Date} args.startedAt
@@ -81,13 +84,26 @@ export function buildWorkday({ meta, load, series, startedAt, algorithmVersion, 
     f0: summary(series.voicedValues('f0')),
     level: summary(series.voicedValues('level')),
     units: load.units,
+    ownVoiceRefDbfs: load.ownVoiceReferenceDbfs ?? null, // level of I = 1 when units are 'normalized' (spec §10.1)
     timeline: minuteTimeline(series),
     events: (meta.events ?? []).map((e) => ({ ...e })),
     fatigue: { pre: meta.fatiguePre ?? null, post: meta.fatiguePost ?? null },
+    assessment: meta.assessment ?? null,
     algorithmVersion,
     source,
   };
   return validateWorkday(workday);
+}
+
+function validateAssessment(a) {
+  for (const [item, { pre, post }] of Object.entries(a.vas ?? {})) {
+    validateVas(`assessment.vas.${item}.pre`, pre ?? null);
+    validateVas(`assessment.vas.${item}.post`, post ?? null);
+  }
+  for (const r of a.results ?? []) {
+    if (!TIMEPOINTS.includes(r.timepoint) || !TASKS.includes(r.task)) throw new RangeError(`assessment result needs a PRE/POST timepoint and a VOWEL/SPEECH task`);
+    if (retainsAudio(r)) throw new RangeError('assessment results must not retain audio');
+  }
 }
 
 /** Throws RangeError on a malformed record; returns it unchanged otherwise. */
@@ -101,6 +117,7 @@ export function validateWorkday(w) {
   if (!(w.durationS >= 0) || !(w.phonationS >= 0)) throw new RangeError('durations must be >= 0');
   validateVas('fatigue.pre', w.fatigue?.pre ?? null);
   validateVas('fatigue.post', w.fatigue?.post ?? null);
+  if (w.assessment) validateAssessment(w.assessment);
   if (!WORKDAY_SOURCES.includes(w.source)) throw new RangeError(`source must be one of ${WORKDAY_SOURCES.join(', ')}`);
   for (const e of w.events ?? []) {
     if (!EVENT_TYPES.includes(e.type) && e.type !== 'fonacion_sostenida' && e.type !== 'nivel_elevado') {

@@ -14,6 +14,7 @@ import { DEFAULT_MODEL_PARAMS, meanDuration, phonationPercentage } from '../voca
 import { createLoadChart, zoneFor } from './load-chart.js';
 import { createScoreChart } from './score-chart.js';
 import { createScoreSeries } from './score-series.js';
+import { createVoiceAssessmentPanel } from './voice-assessment-panel.js';
 
 const CATEGORY_LABELS = {
   fonacion_atribuida: 'Fonación atribuida',
@@ -45,10 +46,16 @@ const MODE_LABELS = {
   [MODES.CALIBRATING]: 'Calibrando ambiente',
   [MODES.ACOUSTIC_CALIBRATING]: 'Calibrando nivel',
   [MODES.ENROLLING]: 'Enrolando hablante',
+  [MODES.RECORDING]: 'Grabando muestra (solo en memoria)',
   [MODES.MEASURING]: 'Midiendo',
   [MODES.PAUSED]: 'En pausa',
 };
 const DOSE_MODELS = ['none', 'linear', 'power', 'exponential', 'saturating'];
+const DOSE_UNITS_TEXT = {
+  calibrated: () => 'Presión calibrada en Pa.',
+  normalized: (load) => `Intensidad relativa a tu voz normal (I = 1 a ${fixed(load.ownVoiceReferenceDbfs, 1)} dBFS): ciclos equivalentes a voz normal.`,
+  relative: () => 'Unidades relativas (sin calibración de presión).',
+};
 const START_ERRORS = {
   distance_dose_needs_calibration:
     'No se inició la sesión: la dosis de distancia necesita la calibración acústica. Calibrá con el tono de referencia o elegí «Sin dosis de distancia».',
@@ -87,6 +94,7 @@ const chart = createLoadChart($('load-chart'), { beta: DEFAULT_MODEL_PARAMS.beta
 let progress = null;
 let busy = false;
 let sessionStartedAt = null;
+let microphoneLabel = '';
 
 // ---------- formatting ----------
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -224,6 +232,15 @@ function renderWorkdayEvents() {
     ? workdayEvents.map((e) => `${duration(e.t)} ${EVENT_LABELS[e.type]}`).join(' · ')
     : 'Sin eventos marcados.');
 }
+const assessment = createVoiceAssessmentPanel({
+  $,
+  say,
+  getSession: () => manager.session,
+  getMicrophone: () => microphoneLabel,
+  getParticipant: () => validateCode('Docente', $('jr-participant').value.trim()),
+  downloadCsv,
+  csvFileName,
+});
 $('jr-event-add').addEventListener('click', () => {
   const t = manager.session?.latest?.timestamp ?? 0;
   workdayEvents.push({ t, type: $('jr-event-type').value, source: 'docente' });
@@ -239,6 +256,7 @@ $('jr-save').addEventListener('click', async () => {
       fatiguePre: vasValue('jr-pre'),
       fatiguePost: vasValue('jr-post'),
       events: [...workdayEvents, ...detectEvents(scoreSeries)].sort((a, b) => a.t - b.t),
+      assessment: assessment.forWorkday(),
     };
     const workday = buildWorkday({ meta, load: session.load, series: scoreSeries, startedAt: sessionStartedAt, algorithmVersion: ALGORITHM_VERSION, source: 'live' });
     await boards.save(workday);
@@ -275,6 +293,7 @@ el.connect.addEventListener('click', async () => {
     info.session.subscribe(onSessionEvent);
     info.session.setSimilarityThreshold(Number(el.threshold.value));
     const s = info.trackSettings;
+    microphoneLabel = info.deviceLabel || '';
     const processed = ['echoCancellation', 'noiseSuppression', 'autoGainControl'].filter((k) => s[k] === true);
     setText(
       el['device-info'],
@@ -344,7 +363,9 @@ el.enroll.addEventListener('click', () =>
     }
     const range = manager.session.profile?.f0Range;
     const f0 = range ? ` Tu tono: ${Math.round(range.low)}-${Math.round(range.high)} Hz.` : '';
-    return `Perfil creado${quality === null ? '' : `: reconoce el ${percent(quality)} de tu voz de prueba`}.${f0} Ya podés iniciar.`;
+    const ref = manager.session.voiceReference;
+    const level = ref ? ` Tu voz normal: ${fixed(ref.levelDbfs, 1)} dBFS (referencia de intensidad).` : '';
+    return `Perfil creado${quality === null ? '' : `: reconoce el ${percent(quality)} de tu voz de prueba`}.${f0}${level} Ya podés iniciar.`;
   }),
 );
 
@@ -383,7 +404,7 @@ el.start.addEventListener('click', () => {
     workdaySaved = false;
     renderWorkdayEvents();
     setText($('jr-status'), 'Midiendo…');
-    setText(el['dose-units'], load.units === 'relative' ? 'Unidades relativas (sin calibración de presión).' : 'Presión calibrada en Pa.');
+    setText(el['dose-units'], DOSE_UNITS_TEXT[load.units](load));
     say('Sesión en curso.');
   } catch (error) {
     say(START_ERRORS[error.code] ?? error.message, 'error');
@@ -433,6 +454,7 @@ function renderControls(session) {
   $('jr-event-type').disabled = !measuring;
   $('jr-event-add').disabled = !measuring;
   $('jr-save').disabled = !idle || !session?.recordCount || workdaySaved || !sessionStartedAt;
+  assessment.renderControls(session);
 
   setAttr(el['mode-dot'], 'data-mode', mode ?? 'none');
   setText(el['mode-label'], mode ? MODE_LABELS[mode] : 'Sin audio');
@@ -455,13 +477,19 @@ function renderControls(session) {
     setAttr(el['step-enroll'], 'data-done', String(session.profile !== null));
   }
 
+  if (progress?.mode === MODES.RECORDING && session?.mode !== MODES.RECORDING) progress = null; // take finished or cancelled
   el.progress.hidden = !progress;
   if (progress) {
     const enrolling = progress.validTime !== undefined;
     const done = enrolling ? progress.validTime : progress.elapsed;
     // Guided enrolment: the profile must cover the raised classroom voice too (spec §6.1).
     const enrolPhase = done < progress.target / 2 ? 'Voz normal' : 'Ahora en voz alta';
-    const label = enrolling ? enrolPhase : progress.mode === MODES.ACOUSTIC_CALIBRATING ? 'Tono de referencia' : 'Ambiente';
+    const recordingPhase = done < progress.leadInSeconds ? 'Silencio' : 'Grabando (solo en memoria)';
+    const label = enrolling
+      ? enrolPhase
+      : progress.mode === MODES.RECORDING
+        ? recordingPhase
+        : progress.mode === MODES.ACOUSTIC_CALIBRATING ? 'Tono de referencia' : 'Ambiente';
     setText(el['progress-label'], label);
     setText(el['progress-value'], `${fixed(done, 1)} / ${progress.target} s`);
     el['progress-bar'].style.width = `${Math.min(100, (100 * done) / progress.target)}%`;

@@ -68,6 +68,10 @@ describe('buildWorkday (summary only, never audio or frames)', () => {
     assert.deepEqual(w.doses, { ...load.doses, distance: load.distanceDose, time: 90, cycle: 16500 });
     assert.deepEqual(w.fatigue, { pre: 12, post: 46 });
     assert.equal(w.units, 'calibrated');
+    assert.equal(w.ownVoiceRefDbfs, null, 'calibrated sessions have no own-voice reference');
+    const normalized = buildWorkday({ meta, load: { ...load, units: 'normalized', ownVoiceReferenceDbfs: -31.2 }, series, startedAt, algorithmVersion: '0.7.0', source: 'live' });
+    assert.equal(normalized.units, 'normalized');
+    assert.equal(normalized.ownVoiceRefDbfs, -31.2);
     assert.equal(w.source, 'live');
   });
 

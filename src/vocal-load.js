@@ -23,8 +23,10 @@ export * from './math/usage-metrics.js';
  * @param {number} [options.referencePressure=1] P_0
  * @param {boolean} [options.calibrated=false] whether P_k is calibrated pressure (Pa)
  * @param {object} [options.distanceDose] distance-dose options (see resolveDistanceDoseOptions); needs calibration
+ * @param {number | null} [options.ownVoiceReferenceDbfs] level of the normal voice the pressure is normalised to
+ *   (uncalibrated sessions, spec §10.1); the units become 'normalized'
  */
-export function createVocalLoadState({ params, referencePressure = 1, calibrated = false, distanceDose } = {}) {
+export function createVocalLoadState({ params, referencePressure = 1, calibrated = false, distanceDose, ownVoiceReferenceDbfs = null } = {}) {
   assertFinitePositive('P_0', referencePressure);
   const resolved = resolveModelParams(params);
   if (distanceDose !== undefined && distanceDose !== null && calibrated !== true) {
@@ -34,7 +36,8 @@ export function createVocalLoadState({ params, referencePressure = 1, calibrated
   return {
     params: resolved,
     referencePressure,
-    units: acousticLoadUnits(calibrated),
+    units: acousticLoadUnits(calibrated, calibrated !== true && ownVoiceReferenceDbfs !== null),
+    ownVoiceReferenceDbfs: calibrated === true ? null : ownVoiceReferenceDbfs,
     tau: timeConstant(resolved.beta),
     halfLife: halfLife(resolved.beta),
     frameIndex: 0,

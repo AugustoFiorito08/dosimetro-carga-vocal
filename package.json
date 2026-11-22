@@ -1,6 +1,6 @@
 {
   "name": "dosimetro-carga-vocal",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "description": "Dosímetro de Carga Vocal con Identificación del Hablante",
   "private": true,
   "type": "module",

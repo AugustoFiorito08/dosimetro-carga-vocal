@@ -4,14 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
-    <title>Dosímetro de Carga Vocal v0.5.0</title>
+    <title>Dosímetro de Carga Vocal v0.7.0</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <header class="topbar">
       <div class="brand">
         <h1>Dosímetro de carga vocal</h1>
-        <span class="version">v0.5.0 · experimental</span>
+        <span class="version">v0.7.0 · experimental</span>
       </div>
       <div class="session-state" aria-live="polite">
         <span class="state-dot" id="mode-dot" aria-hidden="true"></span>
@@ -48,7 +48,8 @@
             <button id="cal-post" type="button" class="btn" disabled>Verificar tras la sesión (5 s)</button>
             <p class="hint" id="cal-drift">Opcional. Sin calibración, la presión y las dosis quedan en unidades relativas.</p>
           </li>
-          <li class="step" id="step-distance">
+          <!-- Distance dose D_d: needs a sound level meter; hidden in the study protocol (spec §10.1). -->
+          <li class="step" id="step-distance" hidden>
             <div class="step-head">
               <label class="step-title" for="dd-profile">Dosis de distancia</label>
               <span class="step-value" id="dd-status">Desactivada</span>
@@ -106,7 +107,23 @@
               <label>Aula<input id="jr-classroom" type="text" placeholder="2B" pattern="[A-Za-z0-9._\-]{1,32}" autocomplete="off" /></label>
             </div>
             <p class="hint">Usá códigos, nunca nombres: el registro es seudónimo.</p>
-            <label class="vas">Fatiga vocal antes de la jornada (EVA 0-100)<input id="jr-pre" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+            <p class="hint">Evaluación vocal: mismo celular, misma distancia a la boca y misma postura en PRE y POST. Cada muestra empieza con 1 s de silencio. Se analiza en el momento y el audio se borra: no se guarda ninguna grabación.</p>
+            <fieldset class="assessment" id="va-pre">
+              <legend>Evaluación vocal PRE (antes de la jornada)</legend>
+              <div class="vas-grid">
+                <label class="vas">Fatiga<input id="jr-pre" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+                <label class="vas">Esfuerzo<input id="va-pre-effort" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+                <label class="vas">Molestia<input id="va-pre-discomfort" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+                <label class="vas">Sequedad<input id="va-pre-dryness" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+              </div>
+              <p class="hint">EVA 0-100: 0 = nada, 100 = lo máximo imaginable.</p>
+              <div class="row">
+                <button id="va-pre-vowel" type="button" class="btn" disabled>/a/ sostenida (5 s)</button>
+                <button id="va-pre-speech" type="button" class="btn" disabled>Texto (25 s)</button>
+              </div>
+              <details class="va-text"><summary>Texto a leer</summary><blockquote class="va-text-body"></blockquote></details>
+              <p class="hint" id="va-pre-status">Sin muestras.</p>
+            </fieldset>
             <div class="row">
               <label class="visually-hidden" for="jr-event-type">Tipo de evento</label>
               <select id="jr-event-type" disabled>
@@ -119,7 +136,28 @@
               <button id="jr-event-add" type="button" class="btn" disabled>Marcar evento</button>
             </div>
             <p class="hint" id="jr-events">Sin eventos marcados.</p>
-            <label class="vas">Fatiga vocal después de la jornada (EVA 0-100)<input id="jr-post" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+            <fieldset class="assessment" id="va-post">
+              <legend>Evaluación vocal POST (al terminar)</legend>
+              <div class="vas-grid">
+                <label class="vas">Fatiga<input id="jr-post" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+                <label class="vas">Esfuerzo<input id="va-post-effort" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+                <label class="vas">Molestia<input id="va-post-discomfort" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+                <label class="vas">Sequedad<input id="va-post-dryness" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+              </div>
+              <p class="hint">EVA 0-100: 0 = nada, 100 = lo máximo imaginable.</p>
+              <div class="row">
+                <button id="va-post-vowel" type="button" class="btn" disabled>/a/ sostenida (5 s)</button>
+                <button id="va-post-speech" type="button" class="btn" disabled>Texto (25 s)</button>
+              </div>
+              <details class="va-text"><summary>Texto a leer</summary><blockquote class="va-text-body"></blockquote></details>
+              <p class="hint" id="va-post-status">Sin muestras.</p>
+            </fieldset>
+            <div class="va-results">
+              <h3 class="va-results-title">Cambio acústico PRE–POST</h3>
+              <table id="va-results" class="va-table"></table>
+              <p class="hint">Valores descriptivos de este método (v. del algoritmo en el CSV); no son diagnósticos ni equivalen a Praat o ANAGRAF. Un cambio acústico no es lo mismo que fatiga.</p>
+              <button id="va-export" type="button" class="btn">Exportar evaluación (CSV)</button>
+            </div>
             <button id="jr-save" type="button" class="btn primary" disabled>Guardar jornada</button>
             <p class="hint">Se guarda solo un resumen en este navegador (sin audio).</p>
           </li>
@@ -168,7 +206,7 @@
           <article class="kpi"><h3>Tiempo sin fonación</h3><p class="value"><span id="kpi-nonphonation-time">—</span></p></article>
           <article class="kpi"><h3>Episodios</h3><p class="value"><span id="kpi-episodes">—</span></p></article>
           <article class="kpi"><h3>Pausa media</h3><p class="value"><span id="kpi-pause">—</span><small>s</small></p></article>
-          <article class="kpi">
+          <article class="kpi" hidden>
             <h3>Dosis de distancia</h3>
             <p class="value"><span id="kpi-distance">—</span><small>m</small></p>
             <p class="sub" id="kpi-distance-note">Elegí un perfil y calibrá antes de iniciar.</p>
@@ -224,7 +262,7 @@
                 <option value="power">DP · potencial</option>
                 <option value="exponential">DE · exponencial</option>
                 <option value="saturating">DS · saturante</option>
-                <option value="distance" disabled>Dd · distancia (m)</option>
+                <option value="distance" disabled hidden>Dd · distancia (m)</option>
               </select>
             </div>
           </div>
@@ -294,6 +332,9 @@
               <option value="real">Jornadas guardadas en este navegador</option>
               <option value="demo">Datos simulados</option>
             </select>
+          </label>
+          <label data-units-wrap hidden>Unidades
+            <select data-units></select>
           </label>
           <span class="board-count" data-count>0 jornadas</span>
           <span class="spacer"></span>
