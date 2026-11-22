@@ -5,6 +5,33 @@ import { rocCurve, youden } from '../../stats/inference.js';
 
 export const MIN_GROUP = 3;
 
+/** Dose units of a workday (spec §10.1); records saved before units existed are relative. */
+export const UNIT_LABELS = Object.freeze({
+  normalized: 'Normalizadas a la voz propia',
+  calibrated: 'Calibradas (Pa)',
+  relative: 'Relativas (sin calibrar)',
+});
+const unitsOf = (w) => w.units ?? 'relative';
+
+/**
+ * The workdays of one units value, so no board mixes dose scales. `selected` null (or
+ * absent from the data) picks the units of the most recent workday.
+ */
+export function selectByUnits(workdays, selected) {
+  if (!workdays.length) return { units: null, workdays: [], excluded: 0, available: [] };
+  const counts = new Map();
+  for (const w of workdays) counts.set(unitsOf(w), (counts.get(unitsOf(w)) ?? 0) + 1);
+  const latest = workdays.reduce((a, b) => (String(b.startedAt) > String(a.startedAt) ? b : a));
+  const units = counts.has(selected) ? selected : unitsOf(latest);
+  const chosen = workdays.filter((w) => unitsOf(w) === units);
+  return {
+    units,
+    workdays: chosen,
+    excluded: workdays.length - chosen.length,
+    available: [...counts].map(([u, count]) => ({ units: u, count })).sort((a, b) => b.count - a.count),
+  };
+}
+
 const pad = (n) => String(n).padStart(2, '0');
 const parse = (iso) => new Date(`${iso}T12:00:00`);
 const format = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;

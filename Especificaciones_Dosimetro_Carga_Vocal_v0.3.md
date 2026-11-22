@@ -345,6 +345,7 @@ Interpretación y límites:
 - Un error en `L_ref` multiplica toda la jornada por `10^(error/10)`: 1 dB equivale a ×1,26 y 3 dB a ×2. Por eso hay que mantener estable la colocación de la diadema y enrolar con la voz habitual, no forzada. Conviene analizar `log(D_k)` y vigilar la estabilidad de `L_ref` de cada participante entre días.
 - La normalización supone que el celular no aplica control automático de ganancia. Si lo aplica, el nivel deja de reflejar el esfuerzo (§4.2).
 - La dosis de distancia `D_d` necesita SPL absoluto (sonómetro) y no está disponible en este protocolo. Su motor se conserva, pero la interfaz la oculta.
+- Los tableros nunca mezclan unidades. Si hay jornadas guardadas con unidades distintas (`normalized`, `calibrated` o `relative`, por ejemplo jornadas de prueba anteriores a la 0.7.0), la barra de datos muestra un selector de unidades. Por defecto se muestran las de la jornada más reciente, y el contador indica cuántas jornadas quedaron fuera. Los registros sin unidades se toman como `relative`. El CSV de los tableros sigue exportando todas las jornadas, con su columna `units`.
 
 ## 11. Modelos matemáticos implementados
 

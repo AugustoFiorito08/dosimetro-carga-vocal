@@ -2,6 +2,7 @@
 // keeps the filter state of each tab and re-renders a tab when it is shown or changed.
 import { generateDemoWorkdays } from '../../store/demo-data.js';
 import { exportWorkdays, importWorkdays } from '../../store/workday-io.js';
+import { UNIT_LABELS, selectByUnits } from './aggregate.js';
 import { renderAnalytics, renderDirector, renderTeacher, summariesCsv } from './views.js';
 
 const RENDERERS = { teacher: renderTeacher, director: renderDirector, analytics: renderAnalytics };
@@ -16,15 +17,21 @@ export function createBoards({ roots, bar, repository, download, say }) {
   let source = 'real';
   let demo = null;
   let visible = null;
+  let units = null; // null: the units of the most recent workday
 
   const workdays = async () => (source === 'demo' ? (demo ??= generateDemoWorkdays()) : repository.list());
 
   async function render(tab = visible) {
     if (!tab) return;
-    const data = await workdays();
-    bar.querySelector('[data-count]').textContent = `${data.length} jornadas`;
+    const all = await workdays();
+    // Doses in different units are on different scales: one units value per view.
+    const selection = selectByUnits(all, units);
+    const select = bar.querySelector('[data-units]');
+    select.replaceChildren(...selection.available.map(({ units: u, count }) => new Option(`${UNIT_LABELS[u] ?? u} (${count})`, u, false, u === selection.units)));
+    bar.querySelector('[data-units-wrap]').hidden = selection.available.length < 2;
+    bar.querySelector('[data-count]').textContent = `${selection.workdays.length} jornadas${selection.excluded ? ` · ${selection.excluded} con otras unidades, no incluidas` : ''}`;
     bar.querySelector('[data-demo-banner]').hidden = source !== 'demo';
-    RENDERERS[tab](roots[tab], data, state[tab]);
+    RENDERERS[tab](roots[tab], selection.workdays, state[tab]);
   }
 
   for (const [tab, root] of Object.entries(roots)) {
@@ -44,6 +51,11 @@ export function createBoards({ roots, bar, repository, download, say }) {
 
   bar.querySelector('[data-source]').addEventListener('change', (event) => {
     source = event.target.value;
+    units = null;
+    render();
+  });
+  bar.querySelector('[data-units]').addEventListener('change', (event) => {
+    units = event.target.value;
     render();
   });
   bar.querySelector('[data-export]').addEventListener('click', async () => {
