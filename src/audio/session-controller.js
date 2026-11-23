@@ -350,6 +350,11 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     return records.toCsv(sessionParams?.parameters ?? '');
   }
 
+  /** The same CSV as lazy chunks for the download (see createFrameRecordLog); null when nothing was recorded. */
+  function exportCsvChunks(options) {
+    return records.length === 0 ? null : records.chunks(sessionParams?.parameters ?? '', options);
+  }
+
   function measure(samples, startSample) {
     const result = classifyFrame(classifier, samples, sampleRate);
     classifier = result.state;
@@ -394,6 +399,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     resume,
     stop,
     exportCsv,
+    exportCsvChunks,
     setSimilarityThreshold,
     setDistanceDoseOptions,
     subscribe(fn) {

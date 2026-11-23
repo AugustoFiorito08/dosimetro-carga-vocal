@@ -35,6 +35,7 @@ describe('pause / resume / finish', () => {
   it('pause ignores frames, resume continues, finish keeps the records', async () => {
     const { session, send } = await readySession();
     assert.equal(session.exportCsv(), null);
+    assert.equal(session.exportCsvChunks(), null);
     session.start();
     send(voice, 5);
     session.pause();
@@ -69,6 +70,7 @@ describe('session CSV', () => {
     send(ambient, 1);
     session.stop();
 
+    assert.equal([...session.exportCsvChunks({ rowsPerChunk: 2 })].join(''), session.exportCsv(), 'chunks join into the same CSV');
     const lines = session.exportCsv().trimEnd().split('\r\n');
     assert.equal(lines[0], CSV_COLUMNS.join(','));
     assert.equal(lines.length, 4);

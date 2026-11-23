@@ -539,9 +539,9 @@ el.finish.addEventListener('click', () => {
   say(`Sesión finalizada: ${manager.session.recordCount} tramas registradas. Exportá el CSV para conservarlas.`);
 });
 el.export.addEventListener('click', () => {
-  const csv = manager.session?.exportCsv();
-  if (!csv) return say('No hay tramas registradas para exportar.', 'error');
-  const name = downloadCsv(csv, { fileName: csvFileName(sessionStartedAt ?? new Date()) });
+  const chunks = manager.session?.exportCsvChunks(); // pieces of ~10 000 rows, never one huge string
+  if (!chunks) return say('No hay tramas registradas para exportar.', 'error');
+  const name = downloadCsv(chunks, { fileName: csvFileName(sessionStartedAt ?? new Date()) });
   say(`CSV exportado: ${name}`);
 });
 

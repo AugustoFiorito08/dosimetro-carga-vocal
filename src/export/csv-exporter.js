@@ -121,6 +121,9 @@ export function buildCsv(rows) {
 
 const PARAMETERS_INDEX = CSV_COLUMNS.indexOf('parameters');
 
+/** Rows per export chunk: ~2 MB of text, so the export never holds the whole document as one string. */
+export const CSV_ROWS_PER_CHUNK = 10000;
+
 /**
  * In-memory rows of a session (spec §13). Each frame is kept as one serialised line with
  * an empty `parameters` cell, so a long session does not repeat that cell (hundreds of
@@ -149,14 +152,26 @@ export function createFrameRecordLog() {
     get length() { return lines.length; },
     /** Characters held for the rows (measures the per-frame memory). */
     get storedChars() { return storedChars; },
-    /** CSV document with `parameters` on the first row; null when nothing was recorded. */
-    toCsv(parameters) {
-      if (lines.length === 0) return null;
+    /**
+     * The CSV document as consecutive pieces: the header, then up to `rowsPerChunk` rows
+     * per piece, each ending in CRLF, with `parameters` on the first row. Joined, they are
+     * exactly toCsv(). Lazy: each piece is built only when requested.
+     */
+    *chunks(parameters, { rowsPerChunk = CSV_ROWS_PER_CHUNK } = {}) {
+      if (!Number.isInteger(rowsPerChunk) || rowsPerChunk < 1) throw new RangeError(`rowsPerChunk must be a positive integer, got ${rowsPerChunk}`);
+      if (lines.length === 0) return;
+      yield csvHeader() + LINE_BREAK;
       const first = firstCells.slice();
       first[PARAMETERS_INDEX] = parameters;
-      const out = [csvHeader(), ...lines];
-      out[1] = serializeCsvRow(first);
-      return out.join(LINE_BREAK) + LINE_BREAK;
+      for (let from = 0; from < lines.length; from += rowsPerChunk) {
+        const rows = lines.slice(from, from + rowsPerChunk);
+        if (from === 0) rows[0] = serializeCsvRow(first);
+        yield rows.join(LINE_BREAK) + LINE_BREAK;
+      }
+    },
+    /** CSV document with `parameters` on the first row; null when nothing was recorded. */
+    toCsv(parameters) {
+      return lines.length === 0 ? null : [...this.chunks(parameters)].join('');
     },
   };
 }
@@ -172,10 +187,15 @@ export function csvFileName(date = new Date(), prefix = 'dosimetro') {
 
 /**
  * Browser download through a Blob URL. Dependencies are injectable for tests.
+ * `content` is the CSV text or an iterable of its chunks (createFrameRecordLog().chunks()):
+ * each chunk becomes a small Blob as soon as it is produced, so the whole document never
+ * exists as a single JavaScript string.
+ * @param {string | Iterable<string>} content
  * @returns {string} the file name used
  */
-export function downloadCsv(csvText, { fileName = csvFileName(), doc = globalThis.document, url = globalThis.URL } = {}) {
-  const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8' });
+export function downloadCsv(content, { fileName = csvFileName(), doc = globalThis.document, url = globalThis.URL } = {}) {
+  const parts = typeof content === 'string' ? [content] : Array.from(content, (chunk) => new Blob([chunk]));
+  const blob = new Blob(parts, { type: 'text/csv;charset=utf-8' });
   const href = url.createObjectURL(blob);
   const link = doc.createElement('a');
   link.href = href;

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   ALGORITHM_VERSION,
   CSV_COLUMNS,
+  CSV_ROWS_PER_CHUNK,
   buildCsv,
   createFrameRecordLog,
   csvFileName,
@@ -251,5 +252,55 @@ describe('frame record log (parameters once per session, spec §13)', () => {
     const legacyPerFrame = legacyChars / frames;
     assert.ok(perFrame < legacyPerFrame - parameters.length + 10, `${perFrame.toFixed(0)} vs ${legacyPerFrame.toFixed(0)} chars per frame`);
     assert.ok(perFrame / legacyPerFrame < 0.25, `kept ${(100 * perFrame / legacyPerFrame).toFixed(1)} % of the memory`);
+  });
+});
+
+describe('chunked CSV export (no single document-sized string)', () => {
+  const frames = [attributed, silenceFrame, foreign, attributed, silenceFrame];
+  function filledLog() {
+    const log = createFrameRecordLog();
+    frames.forEach((f, k) => log.push(formatFrameRow({ ...f, timestamp: k * 0.064 }, load, { parameters: 'x=1' })));
+    return log;
+  }
+  /** The same document built the pre-chunking way: every row serialised and joined at once. */
+  function reference(parameters) {
+    const at = CSV_COLUMNS.indexOf('parameters');
+    return buildCsv(frames.map((f, k) => {
+      const cells = formatFrameRow({ ...f, timestamp: k * 0.064 }, load, { parameters });
+      return cells.map((c, i) => (i === at && k > 0 ? '' : c));
+    }));
+  }
+
+  it('yields the header and at most rowsPerChunk rows per chunk, each ending in CRLF', () => {
+    const chunks = [...filledLog().chunks('x=1', { rowsPerChunk: 2 })];
+    assert.equal(chunks.length, 4, 'header + 3 chunks of rows');
+    assert.equal(chunks[0], `${csvHeader()}\r\n`);
+    assert.ok(chunks.every((c) => c.endsWith('\r\n')));
+    assert.deepEqual(chunks.slice(1).map((c) => c.split('\r\n').length - 1), [2, 2, 1]);
+  });
+
+  it('joins into exactly the same bytes as the single-string export, for any chunk size', () => {
+    const expected = reference('x=1;calDriftDb=0.2');
+    for (const rowsPerChunk of [1, 2, 3, 5, 10000]) {
+      assert.equal([...filledLog().chunks('x=1;calDriftDb=0.2', { rowsPerChunk })].join(''), expected, `rowsPerChunk=${rowsPerChunk}`);
+    }
+    assert.equal(filledLog().toCsv('x=1;calDriftDb=0.2'), expected);
+  });
+
+  it('defaults to 10 000 rows per chunk, rejects invalid sizes and yields nothing when empty', () => {
+    assert.equal(CSV_ROWS_PER_CHUNK, 10000);
+    assert.equal([...filledLog().chunks('x=1')].length, 2);
+    assert.throws(() => [...filledLog().chunks('x=1', { rowsPerChunk: 0 })], RangeError);
+    assert.deepEqual([...createFrameRecordLog().chunks('x=1')], []);
+  });
+
+  it('builds the download Blob from the chunks with the same content', async () => {
+    const link = { style: {}, click() {}, remove() {} };
+    const doc = { createElement: () => link, body: { append() {} } };
+    let blob = null;
+    const url = { createObjectURL: (b) => ((blob = b), 'blob:y'), revokeObjectURL() {} };
+    downloadCsv(filledLog().chunks('x=1', { rowsPerChunk: 2 }), { fileName: 'c.csv', doc, url });
+    assert.equal(blob.type, 'text/csv;charset=utf-8');
+    assert.equal(await blob.text(), reference('x=1'));
   });
 });
