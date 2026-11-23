@@ -617,7 +617,9 @@ La aplicación exporta un archivo CSV por trama. Debe incluir, como mínimo:
 - presión eficaz en Pa (`pressure_pa`) y nivel en dB SPL (`spl_db`), vacíos si la sesión no está calibrada;
 - dosis de distancia en metros (`d_d`), vacía si no se calcula (§11.8).
 
-Con dosis de distancia, los parámetros incluyen `ddProfile`, `ddOffsetDb`, `ddOffsetSource` (`measured` o `inverse_distance`) y, si corresponde, `ddMouthDistanceM`. Con calibración, los parámetros incluyen `calRefDbSpl` y `calCoefficient`. Tras la verificación posterior se agregan `calPostCoefficient`, `calDriftPct`, `calDriftDb` y `calWithinTolerance`; al exportar, estos valores se escriben en todas las filas de la sesión.
+Con dosis de distancia, los parámetros incluyen `ddProfile`, `ddOffsetDb`, `ddOffsetSource` (`measured` o `inverse_distance`) y, si corresponde, `ddMouthDistanceM`. Con calibración, los parámetros incluyen `calRefDbSpl` y `calCoefficient`. Tras la verificación posterior se agregan `calPostCoefficient`, `calDriftPct`, `calDriftDb` y `calWithinTolerance`, que se incluyen al exportar.
+
+**Parámetros una sola vez (desde 0.8.0).** La columna `parameters` conserva su posición, pero solo la primera fila de datos trae el valor; en las demás filas la celda queda vacía. Los parámetros son los mismos para toda la sesión, así que para cada fila valen los de la primera. Antes de 0.8.0 se repetían en todas las filas, unos 500 caracteres por trama: en una jornada de 8 h el CSV y la memoria de la sesión pasaban de unos 490 MB a unos 140 MB con este cambio. Quien lea los parámetros de una fila cualquiera, por ejemplo después de filtrar, debe tomarlos de la primera fila. La versión del algoritmo (`algorithm_version`) permite distinguir ambos formatos.
 
 Las columnas nuevas se agregan al final para no alterar la posición de las existentes.
 
@@ -755,6 +757,7 @@ La salida correcta es un índice experimental de carga vocal calculada. No debe 
 | 0.4.0 | 2026-11-18 | Calibración acústica con tono de referencia, deriva pre/post, presión en Pa y nivel en dB SPL en el CSV, `P_0 = 1 Pa` con calibración, y dosis de distancia `D_d` de Titze, Švec y Popolo (2003) |
 | 0.6.0 | 2026-11-20 | Evaluación acústica PRE–POST (§23): /a/ sostenida y texto estándar analizados en memoria y borrados; F0, CPP/CPPS, HNR, LTAS, cepstro medio, jitter y shimmer exploratorios; EVA de esfuerzo, molestia y sequedad; registro `VOICE_ACOUSTIC_ASSESSMENT` |
 | 0.7.0 | 2026-11-22 | Intensidad normalizada a la voz propia sin calibración (§10.1): `I = 1` a la voz normal del enrolamiento, dosis comparables entre celulares, `ownVoiceRefDbfs` en la jornada y en los CSV; `D_d` oculta en la interfaz |
+| 0.8.0 | 2026-11-22 | Captura que avisa y pausa ante micrófono perdido, audio suspendido o página oculta, con wake lock; autoguardado periódico de la jornada con recuperación tras cierre inesperado (§12.2); `parameters` del CSV solo en la primera fila (§13) |
 
 ## 23. Evaluación acústica PRE–POST
 

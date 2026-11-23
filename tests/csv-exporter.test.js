@@ -5,6 +5,7 @@ import {
   ALGORITHM_VERSION,
   CSV_COLUMNS,
   buildCsv,
+  createFrameRecordLog,
   csvFileName,
   csvHeader,
   downloadCsv,
@@ -188,5 +189,67 @@ describe('download', () => {
     assert.equal(await blob.text(), 'a,b\r\n');
     await new Promise((r) => setTimeout(r, 5));
     assert.deepEqual(events, ['create:a', 'append', 'click:f.csv', 'remove', 'revoke:blob:x']);
+  });
+});
+
+describe('frame record log (parameters once per session, spec §13)', () => {
+  const PARAMS = 'p';
+  const at = CSV_COLUMNS.indexOf('parameters');
+  const rowsOf = (csv) => parseCsv(csv).slice(1);
+
+  it('exports the parameters on the first row only, keeping every column in place', () => {
+    const log = createFrameRecordLog();
+    for (const frame of [attributed, silenceFrame, foreign]) log.push(formatFrameRow(frame, load, { parameters: 'beta=1;note=a,"b"' }));
+    assert.equal(log.length, 3);
+    const table = parseCsv(log.toCsv('beta=1;note=a,"b"'));
+    assert.deepEqual(table[0], [...CSV_COLUMNS]);
+    const rows = table.slice(1);
+    assert.ok(rows.every((r) => r.length === CSV_COLUMNS.length));
+    assert.deepEqual(rows.map((r) => r[at]), ['beta=1;note=a,"b"', '', '']);
+    assert.deepEqual(rows.map((r) => column(r, 'final_category')), ['fonacion_atribuida', 'silencio', 'voz_no_atribuida']);
+    assert.deepEqual(rows.map((r) => column(r, 'algorithm_version')), [ALGORITHM_VERSION, ALGORITHM_VERSION, ALGORITHM_VERSION]);
+  });
+
+  it('writes the parameters given at export time (e.g. after the post calibration)', () => {
+    const log = createFrameRecordLog();
+    log.push(formatFrameRow(attributed, load, { parameters: 'a=1' }));
+    log.push(formatFrameRow(silenceFrame, load, { parameters: 'a=1' }));
+    assert.deepEqual(rowsOf(log.toCsv('a=1;calDriftDb=0.2')).map((r) => r[at]), ['a=1;calDriftDb=0.2', '']);
+  });
+
+  it('keeps every other cell identical to the full row', () => {
+    const log = createFrameRecordLog();
+    const cells = formatFrameRow(silenceFrame, load, { parameters: PARAMS });
+    log.push(formatFrameRow(attributed, load, { parameters: PARAMS }));
+    log.push(cells);
+    const [, second] = rowsOf(log.toCsv(PARAMS));
+    assert.deepEqual(second, cells.map((c, i) => (i === at ? '' : c)));
+  });
+
+  it('is empty (null CSV) until a frame arrives, and clear() drops everything', () => {
+    const log = createFrameRecordLog();
+    assert.equal(log.toCsv(PARAMS), null);
+    log.push(formatFrameRow(attributed, load, { parameters: PARAMS }));
+    log.clear();
+    assert.equal(log.length, 0);
+    assert.equal(log.toCsv(PARAMS), null);
+  });
+
+  it('stores far less per frame than rows repeating the parameters', () => {
+    // A parameters cell as long as a real session's (~40 keys).
+    const parameters = serializeParameters(Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`parameter${i}`, 1 / (i + 3)])));
+    assert.ok(parameters.length > 700, `parameters: ${parameters.length} chars`);
+    const log = createFrameRecordLog();
+    let legacyChars = 0;
+    const frames = 10000;
+    for (let k = 0; k < frames; k++) {
+      const cells = formatFrameRow({ ...attributed, timestamp: k * 0.064 }, load, { parameters });
+      legacyChars += buildCsv([cells]).length - csvHeader().length - 4; // the old in-memory line
+      log.push(cells);
+    }
+    const perFrame = log.storedChars / frames;
+    const legacyPerFrame = legacyChars / frames;
+    assert.ok(perFrame < legacyPerFrame - parameters.length + 10, `${perFrame.toFixed(0)} vs ${legacyPerFrame.toFixed(0)} chars per frame`);
+    assert.ok(perFrame / legacyPerFrame < 0.25, `kept ${(100 * perFrame / legacyPerFrame).toFixed(1)} % of the memory`);
   });
 });

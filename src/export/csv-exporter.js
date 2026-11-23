@@ -1,7 +1,7 @@
 // Spec §13 — per-frame CSV export (RFC 4180: comma separator, dot decimal, CRLF).
 import { splFromPressure } from '../dsp/acoustic-calibration.js';
 
-export const ALGORITHM_VERSION = '0.7.0';
+export const ALGORITHM_VERSION = '0.8.0';
 
 /** Mandatory columns of spec §13, in order. New columns are appended so positional readers keep working. */
 export const CSV_COLUMNS = Object.freeze([
@@ -59,7 +59,7 @@ export const csvHeader = () => serializeCsvRow(CSV_COLUMNS);
 
 /**
  * Compact, stable serialisation of the parameters used ("key=value;..."),
- * computed once per session and repeated on every row.
+ * computed once per session and written on the first row only (createFrameRecordLog).
  */
 export function serializeParameters(parameters = {}) {
   return Object.entries(parameters)
@@ -117,6 +117,48 @@ export function formatFrameRow(analysis = {}, state = null, sessionParams = {}) 
 export function buildCsv(rows) {
   const lines = rows.map((row) => (Array.isArray(row) ? serializeCsvRow(row) : row));
   return [csvHeader(), ...lines].join(LINE_BREAK) + LINE_BREAK;
+}
+
+const PARAMETERS_INDEX = CSV_COLUMNS.indexOf('parameters');
+
+/**
+ * In-memory rows of a session (spec §13). Each frame is kept as one serialised line with
+ * an empty `parameters` cell, so a long session does not repeat that cell (hundreds of
+ * characters) on every frame; the export writes the parameters on the first row only.
+ * Every other cell, and the position of every column, stays as formatFrameRow() made it.
+ */
+export function createFrameRecordLog() {
+  let lines = [];
+  let firstCells = null;
+  let storedChars = 0;
+  return {
+    /** @param {string[]} cells formatFrameRow() output */
+    push(cells) {
+      if (firstCells === null) firstCells = cells.slice();
+      const compact = cells.slice();
+      compact[PARAMETERS_INDEX] = '';
+      const line = serializeCsvRow(compact);
+      lines.push(line);
+      storedChars += line.length;
+    },
+    clear() {
+      lines = [];
+      firstCells = null;
+      storedChars = 0;
+    },
+    get length() { return lines.length; },
+    /** Characters held for the rows (measures the per-frame memory). */
+    get storedChars() { return storedChars; },
+    /** CSV document with `parameters` on the first row; null when nothing was recorded. */
+    toCsv(parameters) {
+      if (lines.length === 0) return null;
+      const first = firstCells.slice();
+      first[PARAMETERS_INDEX] = parameters;
+      const out = [csvHeader(), ...lines];
+      out[1] = serializeCsvRow(first);
+      return out.join(LINE_BREAK) + LINE_BREAK;
+    },
+  };
 }
 
 /** dosimetro_2026-11-04T14-30-05.csv (local time, filename-safe). */
