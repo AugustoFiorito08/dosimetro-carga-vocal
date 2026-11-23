@@ -9,6 +9,7 @@ import { ALGORITHM_VERSION, csvFileName, downloadCsv } from '../export/csv-expor
 import { detectEvents } from '../store/auto-events.js';
 import { buildWorkday, validateCode } from '../store/workday.js';
 import { createIndexedDbRepository } from '../store/workday-repository.js';
+import { createWorkdayAutosaver, recoverCheckpoints } from '../store/workday-autosave.js';
 import { createBoards } from './boards/boards.js';
 import { EVENT_LABELS } from './boards/views.js';
 import { DEFAULT_MODEL_PARAMS, meanDuration, phonationPercentage } from '../vocal-load.js';
@@ -198,10 +199,11 @@ function downloadText(text, fileName, type) {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(href), 0);
 }
+const workdayRepository = createIndexedDbRepository();
 const boards = createBoards({
   roots: { teacher: $('tab-teacher'), director: $('tab-director'), analytics: $('tab-analytics') },
   bar: $('board-bar'),
-  repository: createIndexedDbRepository(),
+  repository: workdayRepository,
   download: downloadText,
   say,
 });
@@ -261,20 +263,34 @@ $('jr-event-add').addEventListener('click', () => {
   workdayEvents.push({ t, type: $('jr-event-type').value, source: 'docente' });
   renderWorkdayEvents();
 });
+/**
+ * Workday of the current session. A checkpoint (lenient) skips an invalid VAS instead of
+ * failing; the codes are always required, since they make the record id.
+ */
+function currentWorkday({ lenient = false } = {}) {
+  const vas = (id) => {
+    try { return vasValue(id); } catch (error) { if (lenient) return null; throw error; }
+  };
+  const meta = {
+    participantId: validateCode('Docente', $('jr-participant').value.trim()),
+    schoolId: validateCode('Escuela', $('jr-school').value.trim()),
+    classroom: validateCode('Aula', $('jr-classroom').value.trim()),
+    fatiguePre: vas('jr-pre'),
+    fatiguePost: vas('jr-post'),
+    events: [...workdayEvents, ...detectEvents(scoreSeries)].sort((a, b) => a.t - b.t),
+    assessment: assessment.forWorkday(),
+  };
+  return buildWorkday({ meta, load: manager.session.load, series: scoreSeries, startedAt: sessionStartedAt, algorithmVersion: ALGORITHM_VERSION, source: 'live' });
+}
 $('jr-save').addEventListener('click', async () => {
   try {
-    const session = manager.session;
-    const meta = {
-      participantId: validateCode('Docente', $('jr-participant').value.trim()),
-      schoolId: validateCode('Escuela', $('jr-school').value.trim()),
-      classroom: validateCode('Aula', $('jr-classroom').value.trim()),
-      fatiguePre: vasValue('jr-pre'),
-      fatiguePost: vasValue('jr-post'),
-      events: [...workdayEvents, ...detectEvents(scoreSeries)].sort((a, b) => a.t - b.t),
-      assessment: assessment.forWorkday(),
-    };
-    const workday = buildWorkday({ meta, load: session.load, series: scoreSeries, startedAt: sessionStartedAt, algorithmVersion: ALGORITHM_VERSION, source: 'live' });
-    await boards.save(workday);
+    const workday = currentWorkday();
+    if (autosave) {
+      await autosave.finalize(workday); // waits for a checkpoint in flight, then writes the clean record
+      boards.refresh();
+    } else {
+      await boards.save(workday);
+    }
     workdaySaved = true;
     setText($('jr-status'), `Guardada ${workday.id}`);
     say(`Jornada guardada (${workday.events.length} eventos). Ya aparece en Mi jornada, Dirección y Analítica.`);
@@ -434,6 +450,39 @@ function onLifecycleEvent(event) {
   }
 }
 manager.onLifecycle(onLifecycleEvent);
+manager.onLifecycle((event) => {
+  // Checkpoint before the browser may freeze or kill the page.
+  if (event.type === 'interrupted' || event.type === 'hidden') autosave?.checkpoint();
+});
+window.addEventListener('pagehide', () => autosave?.checkpoint()); // best effort: the write may not finish
+
+// ---------- workday autosave (checkpoints in IndexedDB, spec §12.2) ----------
+let autosave = null; // autosaver of the current / last session
+let autosaveWarned = false;
+function startAutosave() {
+  autosaveWarned = false;
+  autosave = createWorkdayAutosaver({
+    repository: workdayRepository,
+    snapshot: () => currentWorkday({ lenient: true }),
+    onError(error) {
+      if (autosaveWarned) return;
+      autosaveWarned = true;
+      const codes = error.message.includes('code of');
+      say(codes
+        ? 'Autoguardado inactivo: completá docente, escuela y aula con códigos para que la jornada se guarde sola.'
+        : `No se pudo autoguardar la jornada: ${error.message}`, 'error');
+    },
+  });
+  autosave.start();
+}
+recoverCheckpoints(workdayRepository)
+  .then((lost) => {
+    if (lost.length === 0) return;
+    const at = (w) => new Date(w.checkpoint.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    say(`Se recuperó${lost.length > 1 ? 'n' : ''} ${lost.map((w) => `${w.id} (autoguardada ${at(w)})`).join(', ')}: la sesión se cerró sin guardar. Ya aparece en los tableros.`);
+    boards.refresh();
+  })
+  .catch((error) => say(`No se pudieron revisar las jornadas autoguardadas: ${error.message}`, 'error'));
 
 window.addEventListener('beforeunload', (event) => {
   if (!hasUnsavedWork({ session: manager.session, workdaySaved })) return;
@@ -442,7 +491,15 @@ window.addEventListener('beforeunload', (event) => {
 });
 
 // ---------- session controls ----------
-el.start.addEventListener('click', () => {
+el.start.addEventListener('click', async () => {
+  if (hasUnsavedWork({ session: manager.session, workdaySaved })) {
+    if (!window.confirm('La sesión anterior no se guardó como jornada. ¿Descartarla e iniciar una nueva?')) return;
+    try {
+      await autosave?.discard();
+    } catch (error) {
+      return say(`No se pudo descartar el autoguardado anterior: ${error.message}`, 'error');
+    }
+  }
   try {
     manager.session.setDistanceDoseOptions(distanceDoseOptionsFromForm());
     const load = manager.session.start();
@@ -453,6 +510,7 @@ el.start.addEventListener('click', () => {
     openGap = null;
     workdaySaved = false;
     manager.keepAwake(true);
+    startAutosave();
     renderWorkdayEvents();
     setText($('jr-status'), 'Midiendo…');
     setText(el['dose-units'], DOSE_UNITS_TEXT[load.units](load));
@@ -464,6 +522,7 @@ el.start.addEventListener('click', () => {
 el.pause.addEventListener('click', () => {
   manager.session.pause();
   manager.keepAwake(false);
+  autosave?.checkpoint();
   say('Sesión en pausa. Podés continuar o exportar lo registrado hasta ahora.');
 });
 el.resume.addEventListener('click', async () => {
@@ -478,6 +537,8 @@ el.resume.addEventListener('click', async () => {
 el.finish.addEventListener('click', () => {
   manager.session.stop();
   manager.keepAwake(false);
+  autosave?.stop();
+  autosave?.checkpoint(); // kept until the manual save replaces it or the session is discarded
   say(`Sesión finalizada: ${manager.session.recordCount} tramas registradas. Exportá el CSV para conservarlas.`);
 });
 el.export.addEventListener('click', () => {
@@ -512,6 +573,9 @@ function renderControls(session) {
   $('jr-event-type').disabled = !measuring;
   $('jr-event-add').disabled = !measuring;
   $('jr-save').disabled = !idle || !session?.recordCount || workdaySaved || !sessionStartedAt;
+  if (measuring && autosave?.lastSavedAt) {
+    setText($('jr-status'), `Midiendo… · autoguardada ${autosave.lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+  }
   assessment.renderControls(session);
 
   setAttr(el['mode-dot'], 'data-mode', mode ?? 'none');
