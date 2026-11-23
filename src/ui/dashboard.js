@@ -9,6 +9,9 @@ import { ALGORITHM_VERSION, csvFileName, downloadCsv, downloadCsvGzip, supportsG
 import { detectEvents } from '../store/auto-events.js';
 import { buildWorkday, validateCode } from '../store/workday.js';
 import { createIndexedDbRepository } from '../store/workday-repository.js';
+import { createIndexedDbOutbox } from '../store/outbox.js';
+import { createSyncingRepository } from '../store/sync-service.js';
+import { createOptInRepository } from '../store/sync-settings.js';
 import { bindAutosaveTriggers, createWorkdayAutosaver, recoverCheckpoints } from '../store/workday-autosave.js';
 import { createBoards } from './boards/boards.js';
 import { EVENT_LABELS } from './boards/views.js';
@@ -16,6 +19,7 @@ import { DEFAULT_MODEL_PARAMS, meanDuration, phonationPercentage } from '../voca
 import { createLoadChart, zoneFor } from './load-chart.js';
 import { createScoreChart } from './score-chart.js';
 import { createScoreSeries } from './score-series.js';
+import { createSyncPanel } from './sync-panel.js';
 import { createVoiceAssessmentPanel } from './voice-assessment-panel.js';
 
 const CATEGORY_LABELS = {
@@ -199,7 +203,19 @@ function downloadText(text, fileName, type) {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(href), 0);
 }
-const workdayRepository = createIndexedDbRepository();
+// Local workdays, plus the opt-in sync of their summaries (spec §14.1): saves are queued in
+// the outbox only while the sync panel has it enabled.
+const localWorkdays = createIndexedDbRepository();
+const outbox = createIndexedDbOutbox();
+const syncPanel = createSyncPanel({ $, outbox, repository: localWorkdays, onPurged: () => boards.refresh() });
+const workdayRepository = createOptInRepository({
+  repository: localWorkdays,
+  syncingRepository: createSyncingRepository(localWorkdays, outbox, {
+    onEnqueued: () => syncPanel.flush(),
+    onError: (error) => say(`La jornada quedó guardada en este equipo, pero no se pudo encolar su envío: ${error.message}`, 'error'),
+  }),
+  isEnabled: syncPanel.isEnabled,
+});
 const boards = createBoards({
   roots: { teacher: $('tab-teacher'), director: $('tab-director'), analytics: $('tab-analytics') },
   bar: $('board-bar'),

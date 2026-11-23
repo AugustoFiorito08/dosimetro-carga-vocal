@@ -163,6 +163,35 @@
           </li>
         </ol>
 
+        <details class="sync" id="sync-panel">
+          <summary>Envío a la base analítica <span class="sync-badge" id="sync-badge">Desactivado</span></summary>
+          <form id="sync-form" class="sync-form" novalidate>
+            <p class="hint">Optativo y desactivado por defecto. Activalo solo con consentimiento informado. Se envía el resumen de cada jornada guardada (sin audio); al confirmarse el envío, el resumen se borra de este equipo. La URL, la clave y el token quedan solo en este navegador.</p>
+            <div class="field">
+              <label for="sync-url">URL del proyecto</label>
+              <input id="sync-url" type="url" inputmode="url" placeholder="https://&lt;proyecto&gt;.supabase.co" autocomplete="off" spellcheck="false" aria-describedby="sync-url-error" />
+              <p class="hint" data-alert="true" id="sync-url-error"></p>
+            </div>
+            <div class="field">
+              <label for="sync-anon">Clave pública (anon / publishable)</label>
+              <input id="sync-anon" type="password" autocomplete="off" spellcheck="false" aria-describedby="sync-anon-error" />
+              <p class="hint" data-alert="true" id="sync-anon-error"></p>
+            </div>
+            <div class="field">
+              <label for="sync-token">Token de subida</label>
+              <input id="sync-token" type="password" autocomplete="off" spellcheck="false" aria-describedby="sync-token-error" />
+              <p class="hint" data-alert="true" id="sync-token-error"></p>
+            </div>
+            <label class="sync-toggle"><input id="sync-enabled" type="checkbox" /> Activar el envío en este equipo</label>
+            <div class="sync-actions">
+              <button type="submit" class="btn primary">Guardar</button>
+              <button id="sync-flush" type="button" class="btn" disabled>Enviar ahora</button>
+              <button id="sync-clear" type="button" class="btn" disabled>Borrar credenciales</button>
+            </div>
+            <p class="message" id="sync-status" role="status" aria-live="polite"></p>
+          </form>
+        </details>
+
         <div class="progress" id="progress" hidden>
           <div class="progress-label"><span id="progress-label"></span><span id="progress-value"></span></div>
           <div class="progress-track"><div class="progress-bar" id="progress-bar"></div></div>
