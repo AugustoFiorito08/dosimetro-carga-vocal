@@ -7,6 +7,7 @@ import { createMemoryRepository } from '../src/store/workday-repository.js';
 import {
   CHECKPOINT_STATUSES,
   DEFAULT_AUTOSAVE_INTERVAL_MS,
+  bindAutosaveTriggers,
   createWorkdayAutosaver,
   recoverCheckpoints,
 } from '../src/store/workday-autosave.js';
@@ -259,5 +260,70 @@ describe('recoverCheckpoints (start-up after an unexpected close)', () => {
     await recoverCheckpoints(repository); // e.g. a second tab started up meanwhile
     await autosave.checkpoint();
     assert.equal((await repository.list())[0].checkpoint.status, 'in_progress');
+  });
+});
+
+describe('bindAutosaveTriggers (interruption and close)', () => {
+  function harness(autosave) {
+    const listeners = new Set();
+    const page = new EventTarget();
+    const unbind = bindAutosaveTriggers({
+      onLifecycle: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
+      page,
+      getAutosave: () => autosave.current,
+    });
+    const lifecycle = (event) => listeners.forEach((fn) => fn(event));
+    return { page, lifecycle, unbind, listeners };
+  }
+  const counting = () => {
+    const a = { calls: 0, checkpoint() { a.calls++; return Promise.resolve({ saved: true }); } };
+    return a;
+  };
+
+  it('checkpoints on a capture interruption, a hidden page and pagehide', () => {
+    const autosave = { current: counting() };
+    const { page, lifecycle } = harness(autosave);
+    lifecycle({ type: 'interrupted', reason: 'track_ended', action: 'paused' });
+    lifecycle({ type: 'hidden', capturing: true });
+    page.dispatchEvent(new Event('pagehide'));
+    assert.equal(autosave.current.calls, 3);
+  });
+
+  it('ignores the events that do not risk losing data', () => {
+    const autosave = { current: counting() };
+    const { lifecycle } = harness(autosave);
+    lifecycle({ type: 'restored', reason: 'context_suspended', interruptedMs: 10 });
+    lifecycle({ type: 'visible', hiddenMs: 10, capturing: true });
+    assert.equal(autosave.current.calls, 0);
+  });
+
+  it('uses the autosaver of the current session and tolerates none', () => {
+    const autosave = { current: null };
+    const { page, lifecycle } = harness(autosave);
+    assert.doesNotThrow(() => { lifecycle({ type: 'hidden' }); page.dispatchEvent(new Event('pagehide')); });
+    autosave.current = counting();
+    page.dispatchEvent(new Event('pagehide'));
+    assert.equal(autosave.current.calls, 1);
+  });
+
+  it('an interruption writes a real checkpoint through the queue', async () => {
+    const repository = createMemoryRepository();
+    const { autosave: saver } = setup({ repository });
+    saver.start();
+    const { lifecycle } = harness({ current: saver });
+    lifecycle({ type: 'interrupted', reason: 'context_suspended', action: 'paused' });
+    await flush();
+    const [saved] = await repository.list();
+    assert.equal(saved.checkpoint.status, 'in_progress');
+  });
+
+  it('unbinding removes both listeners', () => {
+    const autosave = { current: counting() };
+    const { page, lifecycle, unbind, listeners } = harness(autosave);
+    unbind();
+    lifecycle({ type: 'hidden' });
+    page.dispatchEvent(new Event('pagehide'));
+    assert.equal(autosave.current.calls, 0);
+    assert.equal(listeners.size, 0);
   });
 });

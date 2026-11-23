@@ -128,3 +128,26 @@ export async function recoverCheckpoints(repository) {
   for (const w of lost) await repository.save({ ...w, checkpoint: { ...w.checkpoint, status: 'recovered' } });
   return lost;
 }
+
+/** Lifecycle events after which the page may be frozen or killed (src/audio/audio-manager.js). */
+const RISKY_LIFECYCLE_EVENTS = new Set(['interrupted', 'hidden']);
+
+/**
+ * Checkpoints the current session when capture is interrupted, the page is hidden or it
+ * is being unloaded (pagehide). The pagehide write is best effort: the browser may end
+ * the page before IndexedDB commits it, which is why the hidden event checkpoints too.
+ * @param {{ onLifecycle: (fn: (event: object) => void) => () => void, page: EventTarget,
+ *   getAutosave: () => { checkpoint(): Promise<object> } | null }} deps
+ * @returns {() => void} unbind
+ */
+export function bindAutosaveTriggers({ onLifecycle, page, getAutosave }) {
+  const save = () => { getAutosave()?.checkpoint(); };
+  const offLifecycle = onLifecycle((event) => {
+    if (RISKY_LIFECYCLE_EVENTS.has(event.type)) save();
+  });
+  page.addEventListener('pagehide', save);
+  return () => {
+    offLifecycle();
+    page.removeEventListener('pagehide', save);
+  };
+}

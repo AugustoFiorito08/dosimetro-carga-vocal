@@ -9,7 +9,7 @@ import { ALGORITHM_VERSION, csvFileName, downloadCsv } from '../export/csv-expor
 import { detectEvents } from '../store/auto-events.js';
 import { buildWorkday, validateCode } from '../store/workday.js';
 import { createIndexedDbRepository } from '../store/workday-repository.js';
-import { createWorkdayAutosaver, recoverCheckpoints } from '../store/workday-autosave.js';
+import { bindAutosaveTriggers, createWorkdayAutosaver, recoverCheckpoints } from '../store/workday-autosave.js';
 import { createBoards } from './boards/boards.js';
 import { EVENT_LABELS } from './boards/views.js';
 import { DEFAULT_MODEL_PARAMS, meanDuration, phonationPercentage } from '../vocal-load.js';
@@ -450,11 +450,8 @@ function onLifecycleEvent(event) {
   }
 }
 manager.onLifecycle(onLifecycleEvent);
-manager.onLifecycle((event) => {
-  // Checkpoint before the browser may freeze or kill the page.
-  if (event.type === 'interrupted' || event.type === 'hidden') autosave?.checkpoint();
-});
-window.addEventListener('pagehide', () => autosave?.checkpoint()); // best effort: the write may not finish
+// Checkpoint before the browser may freeze or kill the page.
+bindAutosaveTriggers({ onLifecycle: manager.onLifecycle, page: window, getAutosave: () => autosave });
 
 // ---------- workday autosave (checkpoints in IndexedDB, spec §12.2) ----------
 let autosave = null; // autosaver of the current / last session
