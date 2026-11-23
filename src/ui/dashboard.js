@@ -2,18 +2,24 @@
 // update runs inside requestAnimationFrame, decoupled from the worklet messages.
 import { createAudioManager } from '../audio/audio-manager.js';
 import { MODES } from '../audio/session-controller.js';
+import { hasUnsavedWork } from '../audio/session-lifecycle.js';
 import { splFromPressure } from '../dsp/acoustic-calibration.js';
 import { toDb } from '../dsp/signal-quality.js';
-import { ALGORITHM_VERSION, csvFileName, downloadCsv } from '../export/csv-exporter.js';
+import { ALGORITHM_VERSION, csvFileName, downloadCsv, downloadCsvGzip, supportsGzip } from '../export/csv-exporter.js';
 import { detectEvents } from '../store/auto-events.js';
 import { buildWorkday, validateCode } from '../store/workday.js';
 import { createIndexedDbRepository } from '../store/workday-repository.js';
+import { createIndexedDbOutbox } from '../store/outbox.js';
+import { createSyncingRepository } from '../store/sync-service.js';
+import { createOptInRepository } from '../store/sync-settings.js';
+import { bindAutosaveTriggers, createWorkdayAutosaver, recoverCheckpoints } from '../store/workday-autosave.js';
 import { createBoards } from './boards/boards.js';
 import { EVENT_LABELS } from './boards/views.js';
 import { DEFAULT_MODEL_PARAMS, meanDuration, phonationPercentage } from '../vocal-load.js';
 import { createLoadChart, zoneFor } from './load-chart.js';
 import { createScoreChart } from './score-chart.js';
 import { createScoreSeries } from './score-series.js';
+import { createSyncPanel } from './sync-panel.js';
 import { createVoiceAssessmentPanel } from './voice-assessment-panel.js';
 
 const CATEGORY_LABELS = {
@@ -60,6 +66,19 @@ const START_ERRORS = {
   distance_dose_needs_calibration:
     'No se inició la sesión: la dosis de distancia necesita la calibración acústica. Calibrá con el tono de referencia o elegí «Sin dosis de distancia».',
 };
+const INTERRUPTION_LABELS = {
+  track_ended: 'el micrófono se desconectó o se revocó el permiso',
+  context_suspended: 'el navegador suspendió el audio',
+  context_interrupted: 'el sistema interrumpió el audio (llamada u otra app)',
+  context_closed: 'el navegador cerró el audio',
+};
+const INTERRUPTION_ACTIONS = {
+  paused: 'La sesión quedó en pausa y el hueco quedó marcado en la jornada.',
+  cancelled: 'La tarea en curso se canceló; repetila cuando vuelva el audio.',
+  none: '',
+};
+/** Hidden for less than this is not worth a notice when capture went on. */
+const HIDDEN_NOTICE_MS = 5000;
 const CALIBRATION_REASONS = {
   too_short: 'el tono fue demasiado corto',
   clipping: 'el tono satura la entrada; bajá la ganancia',
@@ -184,10 +203,23 @@ function downloadText(text, fileName, type) {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(href), 0);
 }
+// Local workdays, plus the opt-in sync of their summaries (spec §14.1): saves are queued in
+// the outbox only while the sync panel has it enabled.
+const localWorkdays = createIndexedDbRepository();
+const outbox = createIndexedDbOutbox();
+const syncPanel = createSyncPanel({ $, outbox, repository: localWorkdays, onPurged: () => boards.refresh() });
+const workdayRepository = createOptInRepository({
+  repository: localWorkdays,
+  syncingRepository: createSyncingRepository(localWorkdays, outbox, {
+    onEnqueued: () => syncPanel.flush(),
+    onError: (error) => say(`La jornada quedó guardada en este equipo, pero no se pudo encolar su envío: ${error.message}`, 'error'),
+  }),
+  isEnabled: syncPanel.isEnabled,
+});
 const boards = createBoards({
   roots: { teacher: $('tab-teacher'), director: $('tab-director'), analytics: $('tab-analytics') },
   bar: $('board-bar'),
-  repository: createIndexedDbRepository(),
+  repository: workdayRepository,
   download: downloadText,
   say,
 });
@@ -227,9 +259,10 @@ const vasValue = (id) => {
   if (!(v >= 0 && v <= 100)) throw new RangeError('La EVA debe estar entre 0 y 100.');
   return v;
 };
+const eventLabel = (e) => (e.note?.startsWith('interrupcion:') ? `Interrupción de captura${e.durationS ? ` (${duration(e.durationS)})` : ''}` : EVENT_LABELS[e.type]);
 function renderWorkdayEvents() {
   setText($('jr-events'), workdayEvents.length
-    ? workdayEvents.map((e) => `${duration(e.t)} ${EVENT_LABELS[e.type]}`).join(' · ')
+    ? workdayEvents.map((e) => `${duration(e.t)} ${eventLabel(e)}`).join(' · ')
     : 'Sin eventos marcados.');
 }
 const assessment = createVoiceAssessmentPanel({
@@ -246,20 +279,34 @@ $('jr-event-add').addEventListener('click', () => {
   workdayEvents.push({ t, type: $('jr-event-type').value, source: 'docente' });
   renderWorkdayEvents();
 });
+/**
+ * Workday of the current session. A checkpoint (lenient) skips an invalid VAS instead of
+ * failing; the codes are always required, since they make the record id.
+ */
+function currentWorkday({ lenient = false } = {}) {
+  const vas = (id) => {
+    try { return vasValue(id); } catch (error) { if (lenient) return null; throw error; }
+  };
+  const meta = {
+    participantId: validateCode('Docente', $('jr-participant').value.trim()),
+    schoolId: validateCode('Escuela', $('jr-school').value.trim()),
+    classroom: validateCode('Aula', $('jr-classroom').value.trim()),
+    fatiguePre: vas('jr-pre'),
+    fatiguePost: vas('jr-post'),
+    events: [...workdayEvents, ...detectEvents(scoreSeries)].sort((a, b) => a.t - b.t),
+    assessment: assessment.forWorkday(),
+  };
+  return buildWorkday({ meta, load: manager.session.load, series: scoreSeries, startedAt: sessionStartedAt, algorithmVersion: ALGORITHM_VERSION, source: 'live' });
+}
 $('jr-save').addEventListener('click', async () => {
   try {
-    const session = manager.session;
-    const meta = {
-      participantId: validateCode('Docente', $('jr-participant').value.trim()),
-      schoolId: validateCode('Escuela', $('jr-school').value.trim()),
-      classroom: validateCode('Aula', $('jr-classroom').value.trim()),
-      fatiguePre: vasValue('jr-pre'),
-      fatiguePost: vasValue('jr-post'),
-      events: [...workdayEvents, ...detectEvents(scoreSeries)].sort((a, b) => a.t - b.t),
-      assessment: assessment.forWorkday(),
-    };
-    const workday = buildWorkday({ meta, load: session.load, series: scoreSeries, startedAt: sessionStartedAt, algorithmVersion: ALGORITHM_VERSION, source: 'live' });
-    await boards.save(workday);
+    const workday = currentWorkday();
+    if (autosave) {
+      await autosave.finalize(workday); // waits for a checkpoint in flight, then writes the clean record
+      boards.refresh();
+    } else {
+      await boards.save(workday);
+    }
     workdaySaved = true;
     setText($('jr-status'), `Guardada ${workday.id}`);
     say(`Jornada guardada (${workday.events.length} eventos). Ya aparece en Mi jornada, Dirección y Analítica.`);
@@ -392,8 +439,80 @@ el['dd-method'].addEventListener('change', () => {
   el['dd-value'].value = measured ? '20' : '5';
 });
 
+// ---------- capture lifecycle (microphone, AudioContext, visibility, exit) ----------
+let openGap = null; // workday event of the interruption in course, closed when audio returns
+function onLifecycleEvent(event) {
+  if (event.type === 'interrupted') {
+    if (event.action === 'paused') {
+      openGap = { t: event.timestamp ?? 0, type: 'otro', source: 'algoritmo', note: `interrupcion:${event.reason}` };
+      workdayEvents.push(openGap);
+      renderWorkdayEvents();
+    }
+    const next = event.reason === 'track_ended'
+      ? ' Finalizá y guardá la jornada; reconectar el micrófono inicia una sesión nueva.'
+      : event.action === 'paused' ? ' Cuando vuelva el audio, tocá Continuar.' : '';
+    say(`Captura interrumpida: ${INTERRUPTION_LABELS[event.reason]}. ${INTERRUPTION_ACTIONS[event.action]}${next}`, 'error');
+  } else if (event.type === 'restored') {
+    if (openGap) openGap.durationS = event.interruptedMs / 1000;
+    openGap = null;
+    renderWorkdayEvents();
+    const paused = manager.session?.mode === MODES.PAUSED;
+    say(`El audio volvió tras ${duration(event.interruptedMs / 1000)} sin captura.${paused ? ' La sesión sigue en pausa: tocá Continuar.' : ''}`);
+  } else if (event.type === 'visible' && !manager.interruption && event.hiddenMs >= HIDDEN_NOTICE_MS) {
+    const measuring = manager.session?.mode === MODES.MEASURING;
+    if (measuring && event.capturing) say(`La página estuvo ${duration(event.hiddenMs / 1000)} en segundo plano; la captura siguió.`);
+  } else if (event.type === 'visible' && manager.interruption) {
+    say(`La captura sigue detenida: ${INTERRUPTION_LABELS[manager.interruption.reason]}.`, 'error');
+  }
+}
+manager.onLifecycle(onLifecycleEvent);
+// Checkpoint before the browser may freeze or kill the page.
+bindAutosaveTriggers({ onLifecycle: manager.onLifecycle, page: window, getAutosave: () => autosave });
+
+// ---------- workday autosave (checkpoints in IndexedDB, spec §12.2) ----------
+let autosave = null; // autosaver of the current / last session
+let autosaveWarned = false;
+function startAutosave() {
+  autosaveWarned = false;
+  autosave = createWorkdayAutosaver({
+    repository: workdayRepository,
+    snapshot: () => currentWorkday({ lenient: true }),
+    onError(error) {
+      if (autosaveWarned) return;
+      autosaveWarned = true;
+      const codes = error.message.includes('code of');
+      say(codes
+        ? 'Autoguardado inactivo: completá docente, escuela y aula con códigos para que la jornada se guarde sola.'
+        : `No se pudo autoguardar la jornada: ${error.message}`, 'error');
+    },
+  });
+  autosave.start();
+}
+recoverCheckpoints(workdayRepository)
+  .then((lost) => {
+    if (lost.length === 0) return;
+    const at = (w) => new Date(w.checkpoint.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    say(`Se recuperó${lost.length > 1 ? 'n' : ''} ${lost.map((w) => `${w.id} (autoguardada ${at(w)})`).join(', ')}: la sesión se cerró sin guardar. Ya aparece en los tableros.`);
+    boards.refresh();
+  })
+  .catch((error) => say(`No se pudieron revisar las jornadas autoguardadas: ${error.message}`, 'error'));
+
+window.addEventListener('beforeunload', (event) => {
+  if (!hasUnsavedWork({ session: manager.session, workdaySaved })) return;
+  event.preventDefault();
+  event.returnValue = ''; // older browsers need it to show the standard prompt
+});
+
 // ---------- session controls ----------
-el.start.addEventListener('click', () => {
+el.start.addEventListener('click', async () => {
+  if (hasUnsavedWork({ session: manager.session, workdaySaved })) {
+    if (!window.confirm('La sesión anterior no se guardó como jornada. ¿Descartarla e iniciar una nueva?')) return;
+    try {
+      await autosave?.discard();
+    } catch (error) {
+      return say(`No se pudo descartar el autoguardado anterior: ${error.message}`, 'error');
+    }
+  }
   try {
     manager.session.setDistanceDoseOptions(distanceDoseOptionsFromForm());
     const load = manager.session.start();
@@ -401,7 +520,10 @@ el.start.addEventListener('click', () => {
     sessionStartedAt = new Date();
     resetScore(load, sessionStartedAt);
     workdayEvents = [];
+    openGap = null;
     workdaySaved = false;
+    manager.keepAwake(true);
+    startAutosave();
     renderWorkdayEvents();
     setText($('jr-status'), 'Midiendo…');
     setText(el['dose-units'], DOSE_UNITS_TEXT[load.units](load));
@@ -412,21 +534,47 @@ el.start.addEventListener('click', () => {
 });
 el.pause.addEventListener('click', () => {
   manager.session.pause();
+  manager.keepAwake(false);
+  autosave?.checkpoint();
   say('Sesión en pausa. Podés continuar o exportar lo registrado hasta ahora.');
 });
-el.resume.addEventListener('click', () => {
+el.resume.addEventListener('click', async () => {
+  // A click is a user gesture, so a suspended context can be resumed here.
+  if (manager.interruption && !(await manager.resumeContext())) {
+    return say(`No se puede continuar: ${INTERRUPTION_LABELS[manager.interruption.reason]}.`, 'error');
+  }
   manager.session.resume();
+  manager.keepAwake(true);
   say('Sesión en curso.');
 });
 el.finish.addEventListener('click', () => {
   manager.session.stop();
+  manager.keepAwake(false);
+  autosave?.stop();
+  autosave?.checkpoint(); // kept until the manual save replaces it or the session is discarded
   say(`Sesión finalizada: ${manager.session.recordCount} tramas registradas. Exportá el CSV para conservarlas.`);
 });
-el.export.addEventListener('click', () => {
-  const csv = manager.session?.exportCsv();
-  if (!csv) return say('No hay tramas registradas para exportar.', 'error');
-  const name = downloadCsv(csv, { fileName: csvFileName(sessionStartedAt ?? new Date()) });
-  say(`CSV exportado: ${name}`);
+// Optional .csv.gz: the plain .csv stays the default; without CompressionStream the option is off.
+const gzipOption = $('export-gzip');
+if (!supportsGzip()) {
+  gzipOption.disabled = true;
+  gzipOption.parentElement.title = 'Este navegador no puede comprimir: se exporta el .csv sin comprimir.';
+}
+let exporting = false;
+el.export.addEventListener('click', async () => {
+  const chunks = manager.session?.exportCsvChunks(); // pieces of ~10 000 rows, never one huge string
+  if (!chunks) return say('No hay tramas registradas para exportar.', 'error');
+  const fileName = csvFileName(sessionStartedAt ?? new Date());
+  if (!gzipOption.checked) return say(`CSV exportado: ${downloadCsv(chunks, { fileName })}`);
+  exporting = true;
+  say('Comprimiendo el CSV…');
+  try {
+    const result = await downloadCsvGzip(chunks, { fileName });
+    if (result.compressed) say(`CSV comprimido exportado: ${result.fileName}`);
+    else say(`No se pudo comprimir (${result.reason === 'unsupported' ? 'el navegador no lo permite' : result.error.message}); se exportó sin comprimir: ${result.fileName}`, 'error');
+  } finally {
+    exporting = false;
+  }
 });
 
 // ---------- render loop ----------
@@ -449,15 +597,19 @@ function renderControls(session) {
   el.pause.disabled = mode !== MODES.MEASURING;
   el.resume.disabled = mode !== MODES.PAUSED;
   el.finish.disabled = mode !== MODES.MEASURING && mode !== MODES.PAUSED;
-  el.export.disabled = !(idle || mode === MODES.PAUSED) || !session?.recordCount;
+  el.export.disabled = exporting || !(idle || mode === MODES.PAUSED) || !session?.recordCount;
   const measuring = mode === MODES.MEASURING || mode === MODES.PAUSED;
   $('jr-event-type').disabled = !measuring;
   $('jr-event-add').disabled = !measuring;
   $('jr-save').disabled = !idle || !session?.recordCount || workdaySaved || !sessionStartedAt;
+  if (measuring && autosave?.lastSavedAt) {
+    setText($('jr-status'), `Midiendo… · autoguardada ${autosave.lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+  }
   assessment.renderControls(session);
 
   setAttr(el['mode-dot'], 'data-mode', mode ?? 'none');
-  setText(el['mode-label'], mode ? MODE_LABELS[mode] : 'Sin audio');
+  const interrupted = mode !== null && manager.interruption !== null;
+  setText(el['mode-label'], mode ? `${MODE_LABELS[mode]}${interrupted ? ' · captura interrumpida' : ''}` : 'Sin audio');
 
   if (session) {
     const cal = session.acousticCalibration;

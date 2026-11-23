@@ -93,7 +93,7 @@ describe('acoustic calibration in the session flow', () => {
     }
   });
 
-  it('post check reports the drift and rewrites the parameters of every exported row', async () => {
+  it('post check reports the drift and adds it to the parameters of the first exported row', async () => {
     const ctx = newSession();
     await calibrateWithTone(ctx, 0.1);
     await prepare(ctx);
@@ -107,10 +107,9 @@ describe('acoustic calibration in the session flow', () => {
     assert.equal(drift.withinTolerance, false);
     const rows = rowsOf(ctx.session);
     assert.equal(rows.length, 3);
-    for (const row of rows) {
-      assert.equal(row.length, CSV_COLUMNS.length);
-      assert.match(col(row, 'parameters'), /;calRefDbSpl=94;calCoefficient=[\d.]+;calPostCoefficient=[\d.]+;calDriftPct=-[\d.]+;calDriftDb=-1\.58\d*;calWithinTolerance=0$/);
-    }
+    for (const row of rows) assert.equal(row.length, CSV_COLUMNS.length);
+    assert.match(col(rows[0], 'parameters'), /;calRefDbSpl=94;calCoefficient=[\d.]+;calPostCoefficient=[\d.]+;calDriftPct=-[\d.]+;calDriftDb=-1\.58\d*;calWithinTolerance=0$/);
+    assert.deepEqual(rows.slice(1).map((row) => col(row, 'parameters')), ['', '']);
     assert.equal(ctx.session.acousticCalibration.coefficient, ctx.session.sessionCalibration.coefficient, 'post does not replace the pre calibration');
   });
 

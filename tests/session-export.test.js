@@ -35,6 +35,7 @@ describe('pause / resume / finish', () => {
   it('pause ignores frames, resume continues, finish keeps the records', async () => {
     const { session, send } = await readySession();
     assert.equal(session.exportCsv(), null);
+    assert.equal(session.exportCsvChunks(), null);
     session.start();
     send(voice, 5);
     session.pause();
@@ -69,6 +70,7 @@ describe('session CSV', () => {
     send(ambient, 1);
     session.stop();
 
+    assert.equal([...session.exportCsvChunks({ rowsPerChunk: 2 })].join(''), session.exportCsv(), 'chunks join into the same CSV');
     const lines = session.exportCsv().trimEnd().split('\r\n');
     assert.equal(lines[0], CSV_COLUMNS.join(','));
     assert.equal(lines.length, 4);
@@ -77,9 +79,10 @@ describe('session CSV', () => {
     const dt = N / SR;
     assert.deepEqual(rows.map((r) => Number(r[0])), [0, dt, 5 * dt]);
     assert.deepEqual(rows.map((r) => r[11]), ['fonacion_atribuida', 'fonacion_atribuida', 'silencio']);
-    assert.equal(rows[0][19], '0.7.0');
+    assert.deepEqual(rows.map((r) => r[19]), ['0.8.0', '0.8.0', '0.8.0']);
     assert.match(rows[0][20], /^sampleRate=16000;beta=.*hStar=300;fStar=2;.*acceptThreshold=0\.65;rejectThreshold=0\.6;/);
     assert.match(rows[0][20], /;highPassHz=50$/);
+    assert.deepEqual(rows.slice(1).map((r) => r[20]), ['', ''], 'parameters are written once, on the first row');
     assert.deepEqual(rows.map((r) => Number(r[21])), [dt, 2 * dt, 2 * dt], 'time dose accumulates attributed frames only');
   });
 

@@ -1,13 +1,19 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { gunzipSync } from 'node:zlib';
 
 import {
   ALGORITHM_VERSION,
   CSV_COLUMNS,
+  CSV_ROWS_PER_CHUNK,
   buildCsv,
+  createFrameRecordLog,
   csvFileName,
   csvHeader,
   downloadCsv,
+  downloadCsvGzip,
+  gzipCsv,
+  supportsGzip,
   escapeCsvCell,
   formatFrameRow,
   formatNumber,
@@ -188,5 +194,193 @@ describe('download', () => {
     assert.equal(await blob.text(), 'a,b\r\n');
     await new Promise((r) => setTimeout(r, 5));
     assert.deepEqual(events, ['create:a', 'append', 'click:f.csv', 'remove', 'revoke:blob:x']);
+  });
+});
+
+describe('frame record log (parameters once per session, spec §13)', () => {
+  const PARAMS = 'p';
+  const at = CSV_COLUMNS.indexOf('parameters');
+  const rowsOf = (csv) => parseCsv(csv).slice(1);
+
+  it('exports the parameters on the first row only, keeping every column in place', () => {
+    const log = createFrameRecordLog();
+    for (const frame of [attributed, silenceFrame, foreign]) log.push(formatFrameRow(frame, load, { parameters: 'beta=1;note=a,"b"' }));
+    assert.equal(log.length, 3);
+    const table = parseCsv(log.toCsv('beta=1;note=a,"b"'));
+    assert.deepEqual(table[0], [...CSV_COLUMNS]);
+    const rows = table.slice(1);
+    assert.ok(rows.every((r) => r.length === CSV_COLUMNS.length));
+    assert.deepEqual(rows.map((r) => r[at]), ['beta=1;note=a,"b"', '', '']);
+    assert.deepEqual(rows.map((r) => column(r, 'final_category')), ['fonacion_atribuida', 'silencio', 'voz_no_atribuida']);
+    assert.deepEqual(rows.map((r) => column(r, 'algorithm_version')), [ALGORITHM_VERSION, ALGORITHM_VERSION, ALGORITHM_VERSION]);
+  });
+
+  it('writes the parameters given at export time (e.g. after the post calibration)', () => {
+    const log = createFrameRecordLog();
+    log.push(formatFrameRow(attributed, load, { parameters: 'a=1' }));
+    log.push(formatFrameRow(silenceFrame, load, { parameters: 'a=1' }));
+    assert.deepEqual(rowsOf(log.toCsv('a=1;calDriftDb=0.2')).map((r) => r[at]), ['a=1;calDriftDb=0.2', '']);
+  });
+
+  it('keeps every other cell identical to the full row', () => {
+    const log = createFrameRecordLog();
+    const cells = formatFrameRow(silenceFrame, load, { parameters: PARAMS });
+    log.push(formatFrameRow(attributed, load, { parameters: PARAMS }));
+    log.push(cells);
+    const [, second] = rowsOf(log.toCsv(PARAMS));
+    assert.deepEqual(second, cells.map((c, i) => (i === at ? '' : c)));
+  });
+
+  it('is empty (null CSV) until a frame arrives, and clear() drops everything', () => {
+    const log = createFrameRecordLog();
+    assert.equal(log.toCsv(PARAMS), null);
+    log.push(formatFrameRow(attributed, load, { parameters: PARAMS }));
+    log.clear();
+    assert.equal(log.length, 0);
+    assert.equal(log.toCsv(PARAMS), null);
+  });
+
+  it('stores far less per frame than rows repeating the parameters', () => {
+    // A parameters cell as long as a real session's (~40 keys).
+    const parameters = serializeParameters(Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`parameter${i}`, 1 / (i + 3)])));
+    assert.ok(parameters.length > 700, `parameters: ${parameters.length} chars`);
+    const log = createFrameRecordLog();
+    let legacyChars = 0;
+    const frames = 10000;
+    for (let k = 0; k < frames; k++) {
+      const cells = formatFrameRow({ ...attributed, timestamp: k * 0.064 }, load, { parameters });
+      legacyChars += buildCsv([cells]).length - csvHeader().length - 4; // the old in-memory line
+      log.push(cells);
+    }
+    const perFrame = log.storedChars / frames;
+    const legacyPerFrame = legacyChars / frames;
+    assert.ok(perFrame < legacyPerFrame - parameters.length + 10, `${perFrame.toFixed(0)} vs ${legacyPerFrame.toFixed(0)} chars per frame`);
+    assert.ok(perFrame / legacyPerFrame < 0.25, `kept ${(100 * perFrame / legacyPerFrame).toFixed(1)} % of the memory`);
+  });
+});
+
+describe('chunked CSV export (no single document-sized string)', () => {
+  const frames = [attributed, silenceFrame, foreign, attributed, silenceFrame];
+  function filledLog() {
+    const log = createFrameRecordLog();
+    frames.forEach((f, k) => log.push(formatFrameRow({ ...f, timestamp: k * 0.064 }, load, { parameters: 'x=1' })));
+    return log;
+  }
+  /** The same document built the pre-chunking way: every row serialised and joined at once. */
+  function reference(parameters) {
+    const at = CSV_COLUMNS.indexOf('parameters');
+    return buildCsv(frames.map((f, k) => {
+      const cells = formatFrameRow({ ...f, timestamp: k * 0.064 }, load, { parameters });
+      return cells.map((c, i) => (i === at && k > 0 ? '' : c));
+    }));
+  }
+
+  it('yields the header and at most rowsPerChunk rows per chunk, each ending in CRLF', () => {
+    const chunks = [...filledLog().chunks('x=1', { rowsPerChunk: 2 })];
+    assert.equal(chunks.length, 4, 'header + 3 chunks of rows');
+    assert.equal(chunks[0], `${csvHeader()}\r\n`);
+    assert.ok(chunks.every((c) => c.endsWith('\r\n')));
+    assert.deepEqual(chunks.slice(1).map((c) => c.split('\r\n').length - 1), [2, 2, 1]);
+  });
+
+  it('joins into exactly the same bytes as the single-string export, for any chunk size', () => {
+    const expected = reference('x=1;calDriftDb=0.2');
+    for (const rowsPerChunk of [1, 2, 3, 5, 10000]) {
+      assert.equal([...filledLog().chunks('x=1;calDriftDb=0.2', { rowsPerChunk })].join(''), expected, `rowsPerChunk=${rowsPerChunk}`);
+    }
+    assert.equal(filledLog().toCsv('x=1;calDriftDb=0.2'), expected);
+  });
+
+  it('defaults to 10 000 rows per chunk, rejects invalid sizes and yields nothing when empty', () => {
+    assert.equal(CSV_ROWS_PER_CHUNK, 10000);
+    assert.equal([...filledLog().chunks('x=1')].length, 2);
+    assert.throws(() => [...filledLog().chunks('x=1', { rowsPerChunk: 0 })], RangeError);
+    assert.deepEqual([...createFrameRecordLog().chunks('x=1')], []);
+  });
+
+  it('builds the download Blob from the chunks with the same content', async () => {
+    const link = { style: {}, click() {}, remove() {} };
+    const doc = { createElement: () => link, body: { append() {} } };
+    let blob = null;
+    const url = { createObjectURL: (b) => ((blob = b), 'blob:y'), revokeObjectURL() {} };
+    downloadCsv(filledLog().chunks('x=1', { rowsPerChunk: 2 }), { fileName: 'c.csv', doc, url });
+    assert.equal(blob.type, 'text/csv;charset=utf-8');
+    assert.equal(await blob.text(), reference('x=1'));
+  });
+});
+
+describe('optional .csv.gz export (CompressionStream)', () => {
+  function bigLog(rows = 3000) {
+    const log = createFrameRecordLog();
+    for (let k = 0; k < rows; k++) log.push(formatFrameRow({ ...(k % 3 ? attributed : silenceFrame), timestamp: k * 0.064 }, load, { parameters: 'x=1' }));
+    return log;
+  }
+  function fakeBrowser() {
+    const downloads = [];
+    const link = { style: {}, click() { downloads.push({ name: link.download, blob }); }, remove() {} };
+    const doc = { createElement: () => link, body: { append() {} } };
+    let blob = null;
+    const url = { createObjectURL: (b) => ((blob = b), 'blob:z'), revokeObjectURL() {} };
+    return { doc, url, downloads };
+  }
+  const bytes = async (blob) => Buffer.from(await blob.arrayBuffer());
+
+  it('detects support for gzip compression', () => {
+    assert.equal(supportsGzip(), true, 'Node and current browsers provide CompressionStream');
+    assert.equal(supportsGzip({ CompressionStreamClass: undefined }), false);
+  });
+
+  it('gzipCsv decompresses to exactly the plain CSV, and is much smaller', async () => {
+    const log = bigLog();
+    const gz = await gzipCsv(log.chunks('x=1', { rowsPerChunk: 500 }));
+    assert.equal(gz.type, 'application/gzip');
+    const raw = await bytes(gz);
+    assert.deepEqual([raw[0], raw[1]], [0x1f, 0x8b], 'gzip magic number');
+    const plain = log.toCsv('x=1');
+    assert.equal(gunzipSync(raw).toString('utf8'), plain);
+    assert.ok(raw.length < plain.length / 4, `${raw.length} vs ${plain.length} bytes`);
+  });
+
+  it('downloads a .csv.gz with the gzip MIME type when asked', async () => {
+    const log = bigLog(10);
+    const { doc, url, downloads } = fakeBrowser();
+    const result = await downloadCsvGzip(log.chunks('x=1'), { fileName: 'dosimetro_x.csv', doc, url });
+    assert.deepEqual(result, { fileName: 'dosimetro_x.csv.gz', compressed: true });
+    assert.equal(downloads[0].name, 'dosimetro_x.csv.gz');
+    assert.equal(downloads[0].blob.type, 'application/gzip');
+    assert.equal(gunzipSync(await bytes(downloads[0].blob)).toString('utf8'), log.toCsv('x=1'));
+  });
+
+  it('falls back to the plain .csv, without throwing, when CompressionStream is missing', async () => {
+    const log = bigLog(10);
+    const { doc, url, downloads } = fakeBrowser();
+    const result = await downloadCsvGzip(log.chunks('x=1'), { fileName: 'd.csv', doc, url, CompressionStreamClass: undefined });
+    assert.deepEqual(result, { fileName: 'd.csv', compressed: false, reason: 'unsupported' });
+    assert.equal(downloads[0].blob.type, 'text/csv;charset=utf-8');
+    assert.equal(await downloads[0].blob.text(), log.toCsv('x=1'));
+  });
+
+  it('falls back to the plain .csv when compression fails midway', async () => {
+    class BrokenCompression {
+      constructor() {
+        const ts = new TransformStream({ transform() { throw new Error('codec crashed'); } });
+        this.readable = ts.readable;
+        this.writable = ts.writable;
+      }
+    }
+    const log = bigLog(10);
+    const { doc, url, downloads } = fakeBrowser();
+    const result = await downloadCsvGzip(log.chunks('x=1'), { fileName: 'd.csv', doc, url, CompressionStreamClass: BrokenCompression });
+    assert.equal(result.compressed, false);
+    assert.equal(result.reason, 'failed');
+    assert.match(result.error.message, /codec crashed/);
+    assert.equal(downloads.length, 1, 'exactly one download, the plain CSV');
+    assert.equal(downloads[0].name, 'd.csv');
+    assert.equal(await downloads[0].blob.text(), log.toCsv('x=1'));
+  });
+
+  it('accepts plain text too', async () => {
+    const gz = await gzipCsv('a,b\r\n1,2\r\n');
+    assert.equal(gunzipSync(await bytes(gz)).toString('utf8'), 'a,b\r\n1,2\r\n');
   });
 });

@@ -11,9 +11,18 @@ export const WORKDAY_SCHEMA = 'vd-des-workday/1';
 export const EVENT_TYPES = Object.freeze(['llamado_atencion', 'explicacion', 'actividad_grupal', 'recreo', 'otro']);
 export const EVENT_SOURCES = Object.freeze(['docente', 'algoritmo']);
 export const WORKDAY_SOURCES = Object.freeze(['live', 'import', 'demo']);
+/**
+ * Optional `checkpoint` of an autosaved record (src/store/workday-autosave.js):
+ * 'in_progress' while its session runs, 'recovered' when found after an unexpected close.
+ * Records without it (manual saves and every earlier record) are final.
+ */
+export const CHECKPOINT_STATUSES = Object.freeze(['in_progress', 'recovered']);
 
 /** Pseudonymous codes only: letters, digits, dot, dash and underscore, no spaces. */
 const CODE = /^[A-Za-z0-9._-]{1,32}$/;
+/** Optional sync identity (spec §14): a random session UUID and a random per-install device id. */
+export const SESSION_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const DEVICE_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
 
 export function validateCode(name, value) {
   if (typeof value !== 'string' || !CODE.test(value)) {
@@ -65,8 +74,10 @@ function minuteTimeline(series) {
  * @param {object} args.load final vocal-load state
  * @param {ReturnType<import('../ui/score-series.js').createScoreSeries>} args.series
  * @param {Date} args.startedAt
+ * @param {string} [args.sessionUuid] random UUID of the session, idempotency key of the sync (spec §14)
+ * @param {string} [args.deviceId] random id of this installation (spec §14); never a hardware id
  */
-export function buildWorkday({ meta, load, series, startedAt, algorithmVersion, source }) {
+export function buildWorkday({ meta, load, series, startedAt, algorithmVersion, source, sessionUuid, deviceId }) {
   const m = load.metrics;
   const workday = {
     schema: WORKDAY_SCHEMA,
@@ -91,6 +102,9 @@ export function buildWorkday({ meta, load, series, startedAt, algorithmVersion, 
     assessment: meta.assessment ?? null,
     algorithmVersion,
     source,
+    // Optional, only when given, so records without them keep their exact shape.
+    ...(sessionUuid === undefined ? {} : { sessionUuid }),
+    ...(deviceId === undefined ? {} : { deviceId }),
   };
   return validateWorkday(workday);
 }
@@ -106,6 +120,11 @@ function validateAssessment(a) {
   }
 }
 
+function validateCheckpoint(c) {
+  if (!CHECKPOINT_STATUSES.includes(c.status)) throw new RangeError(`checkpoint.status must be one of ${CHECKPOINT_STATUSES.join(', ')}`);
+  if (typeof c.savedAt !== 'string' || Number.isNaN(Date.parse(c.savedAt))) throw new RangeError('checkpoint.savedAt must be an ISO date');
+}
+
 /** Throws RangeError on a malformed record; returns it unchanged otherwise. */
 export function validateWorkday(w) {
   if (!w || w.schema !== WORKDAY_SCHEMA) throw new RangeError(`schema must be ${WORKDAY_SCHEMA}`);
@@ -119,6 +138,13 @@ export function validateWorkday(w) {
   validateVas('fatigue.post', w.fatigue?.post ?? null);
   if (w.assessment) validateAssessment(w.assessment);
   if (!WORKDAY_SOURCES.includes(w.source)) throw new RangeError(`source must be one of ${WORKDAY_SOURCES.join(', ')}`);
+  if (w.checkpoint !== undefined && w.checkpoint !== null) validateCheckpoint(w.checkpoint);
+  if (w.sessionUuid !== undefined && !(typeof w.sessionUuid === 'string' && SESSION_UUID_PATTERN.test(w.sessionUuid))) {
+    throw new RangeError(`sessionUuid must be a UUID, got "${w.sessionUuid}"`);
+  }
+  if (w.deviceId !== undefined && !(typeof w.deviceId === 'string' && DEVICE_ID_PATTERN.test(w.deviceId))) {
+    throw new RangeError(`deviceId must be 8-64 letters, digits, "-" or "_", got "${w.deviceId}"`);
+  }
   for (const e of w.events ?? []) {
     if (!EVENT_TYPES.includes(e.type) && e.type !== 'fonacion_sostenida' && e.type !== 'nivel_elevado') {
       throw new RangeError(`unknown event type ${e.type}`);

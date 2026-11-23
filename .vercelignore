@@ -1,0 +1,6 @@
+# Only the app is deployed: /public and /src (public/index.html loads ../src/...).
+tests/
+scripts/
+supabase/
+.claude/
+*.md

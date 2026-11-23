@@ -556,6 +556,10 @@ El paso **Jornada (tableros)** guarda un resumen de cada sesión (`vd-des-workda
 - fatiga vocal percibida antes y después de la jornada, en una escala visual analógica de 0 a 100 (desenlace primario del protocolo), optativas;
 - versión del algoritmo y origen (`live`, `import` o `demo`).
 
+**Autoguardado.** Mientras la sesión mide o está en pausa, la jornada se guarda sola en IndexedDB cada 2 minutos y además al pausar, al finalizar, ante una interrupción de la captura y al ocultar o cerrar la página (en este último caso, sin garantía de que la escritura termine). Es el mismo registro `vd-des-workday/1` con el mismo identificador, reemplazado en su lugar, más un campo optativo `checkpoint: { status, savedAt }`: `in_progress` mientras la sesión sigue y `recovered` cuando se encuentra al abrir la aplicación tras un cierre inesperado (se conserva, aparece en los tableros y se avisa una sola vez). El guardado manual escribe el registro final sin ese campo; los registros sin `checkpoint`, incluidos todos los anteriores, son finales. Las escrituras se hacen de a una, en orden, y el guardado manual siempre es la última. Si el docente cambia el código durante la sesión, se borra el autoguardado con el código anterior. Iniciar una sesión nueva sin haber guardado la anterior pide confirmación y descarta su autoguardado. El autoguardado necesita los códigos de docente, escuela y aula; sin ellos se avisa y no se guarda. Nunca guarda audio.
+
+Cada jornada puede llevar además dos campos optativos para el envío a una base analítica (§14.1): `sessionUuid`, un UUID aleatorio de la sesión, y `deviceId`, un identificador aleatorio de la instalación.
+
 Las jornadas se exportan e importan como JSON (`vd-des-workdays/1`) para reunir las de varios equipos; al importar se omiten los identificadores ya presentes y se informan los registros inválidos.
 
 **Eventos automáticos (reglas provisionales):** fonación sostenida, cuando una ventana de 120 s tiene al menos 60 % de fonación (se recorta a sus bordes con voz); nivel elevado, cuando la voz supera durante 3 s o más la mediana de la propia jornada en 6 dB. Describen el patrón acústico; no identifican la actividad ni diagnostican fatiga.
@@ -615,9 +619,13 @@ La aplicación exporta un archivo CSV por trama. Debe incluir, como mínimo:
 - presión eficaz en Pa (`pressure_pa`) y nivel en dB SPL (`spl_db`), vacíos si la sesión no está calibrada;
 - dosis de distancia en metros (`d_d`), vacía si no se calcula (§11.8).
 
-Con dosis de distancia, los parámetros incluyen `ddProfile`, `ddOffsetDb`, `ddOffsetSource` (`measured` o `inverse_distance`) y, si corresponde, `ddMouthDistanceM`. Con calibración, los parámetros incluyen `calRefDbSpl` y `calCoefficient`. Tras la verificación posterior se agregan `calPostCoefficient`, `calDriftPct`, `calDriftDb` y `calWithinTolerance`; al exportar, estos valores se escriben en todas las filas de la sesión.
+Con dosis de distancia, los parámetros incluyen `ddProfile`, `ddOffsetDb`, `ddOffsetSource` (`measured` o `inverse_distance`) y, si corresponde, `ddMouthDistanceM`. Con calibración, los parámetros incluyen `calRefDbSpl` y `calCoefficient`. Tras la verificación posterior se agregan `calPostCoefficient`, `calDriftPct`, `calDriftDb` y `calWithinTolerance`, que se incluyen al exportar.
+
+**Parámetros una sola vez (desde 0.8.0).** La columna `parameters` conserva su posición, pero solo la primera fila de datos trae el valor; en las demás filas la celda queda vacía. Los parámetros son los mismos para toda la sesión, así que para cada fila valen los de la primera. Antes de 0.8.0 se repetían en todas las filas, unos 500 caracteres por trama: en una jornada de 8 h el CSV y la memoria de la sesión pasaban de unos 490 MB a unos 140 MB con este cambio. Quien lea los parámetros de una fila cualquiera, por ejemplo después de filtrar, debe tomarlos de la primera fila. La versión del algoritmo (`algorithm_version`) permite distinguir ambos formatos.
 
 Las columnas nuevas se agregan al final para no alterar la posición de las existentes.
+
+**Exportación comprimida (opcional).** Por defecto se descarga el `.csv` sin comprimir. Con la casilla «Comprimir (.csv.gz)» se descarga el mismo CSV comprimido con gzip (`application/gzip`): al descomprimirlo es idéntico byte a byte al `.csv`, y una jornada de 8 h pasa de unos 148 MB a unos 26 MB. R (`read.csv`, `readr`) y pandas lo leen sin descomprimir; las planillas necesitan descomprimirlo antes. Si el navegador no tiene `CompressionStream`, la casilla queda deshabilitada; si la compresión falla, se descarga el `.csv` sin comprimir y se avisa. La exportación arma el archivo por bloques de 10 000 filas, sin un texto único del tamaño del documento.
 
 La conservación de scores continuos permite recalcular decisiones con nuevos umbrales sin repetir la medición.
 
@@ -632,6 +640,83 @@ La conservación de scores continuos permite recalcular decisiones con nuevos um
 - La base analítica debe utilizar identificadores codificados.
 - Las jornadas guardadas contienen solo resúmenes y códigos, quedan en el navegador del equipo y se pueden exportar o borrar desde la barra de datos.
 - Los tableros nunca muestran nombres y ocultan los grupos de menos de 3 docentes.
+
+### 14.1 Envío opcional a una base analítica
+
+El envío de resúmenes a una base de datos que alimente un tablero analítico es **optativo y está desactivado por defecto**. Se activa en cada equipo (*opt-in*), solo con consentimiento informado y con la aprobación ética del protocolo que lo prevea. Sin esa activación, nada sale del navegador.
+
+**Qué se envía.** Solo el resumen de la jornada (`vd-des-workday/1`). El contrato es una lista cerrada de campos (`SYNC_FIELDS`, `src/store/workday-sync.js`):
+
+- identificación: `schema`, `id` y, si existen, `sessionUuid` y `deviceId`;
+- códigos seudónimos: `participantId`, `schoolId`, `classroom`;
+- jornada: `date`, `startedAt`, `durationS`, `phonationS`, `validRatio`;
+- carga: `doses`, `hMax`, percentiles de `f0` y `level`, `units`, `ownVoiceRefDbfs`, `timeline` (dosis por minuto);
+- contexto: `events` (incluidas las interrupciones de captura), `fatigue`, `assessment` (EVA y medidas PRE–POST, sin audio);
+- procedencia: `algorithmVersion`, `source` y, si corresponde, `checkpoint`.
+
+Todo campo fuera de la lista se descarta al armar el envío y se rechaza al recibirlo.
+
+**Qué no se envía nunca.**
+
+- Audio, ni crudo ni filtrado.
+- Tramas: el CSV por trama solo se exporta a mano (§13).
+- La plantilla del hablante (prototipos, distancias, rango de F0 del enrolamiento).
+- Nombres ni datos de contacto.
+
+Como resguardo, el contrato rechaza cualquier arreglo de más de 100 valores numéricos fuera de la línea de tiempo por minuto, que tiene como máximo 1440 valores.
+
+**Qué jornadas se envían.** Solo las guardadas y las recuperadas tras un cierre inesperado; estas llegan marcadas con `checkpoint.status = recovered`. Una sesión en curso (`in_progress`) nunca se envía.
+
+**Identidad y duplicados.**
+
+- `sessionUuid` es un UUID aleatorio de la sesión y es la clave de idempotencia: reenviar la misma jornada la reemplaza, no la duplica. Si falta, se usa `id`.
+- `deviceId` es un identificador aleatorio de la instalación, nunca un identificador del hardware.
+- Ambos campos son optativos y no cambian la versión del esquema: los registros anteriores siguen siendo válidos.
+
+**Formato.** El envío usa el mismo sobre que la exportación JSON (`vd-des-workdays/1`: `format`, `exportedAt`, `workdays`), así que un archivo exportado a mano y un envío se cargan igual. Para el servidor se publica un JSON Schema del registro (`WORKDAY_SYNC_JSON_SCHEMA`). La referencia es el validador `validateSyncRecord`, que además aplica el resguardo contra contenido de audio.
+
+**En la base analítica.**
+
+- Se usan solo códigos.
+- Los tableros mantienen la supresión de grupos de menos de 3 docentes.
+- Se debe poder borrar todo lo asociado a un código si la persona retira su consentimiento.
+- El transporte (HTTP, autenticación) y el proveedor quedan fuera de este contrato.
+
+**Cola de envío y reintentos.** La base local pasa a la versión 2, que agrega el almacén `outbox`. La migración desde la versión 1 solo crea ese almacén y conserva intactas las jornadas guardadas. Si otra pestaña tiene abierta la versión anterior, se pide cerrarla y recargar.
+
+- Al guardar una jornada final medida en el equipo (`source = live`), ya sea con «Guardar jornada» o al cerrar el autoguardado, se encola su registro de envío.
+- También se encolan las jornadas recuperadas.
+- No se encolan los autoguardados en curso ni las jornadas importadas o de demostración.
+- Si falla el encolado, el guardado local sigue siendo válido: se avisa y la jornada queda en el equipo.
+- El servicio de envío (`src/store/sync-service.js`) toma de a una las jornadas pendientes cuyo turno llegó, solo con conexión, y nunca hace dos rondas a la vez.
+- Ante un error transitorio reintenta con espera exponencial: base × 2^(intento − 1), con un máximo; por defecto, 30 s y 1 h. Le suma una variación aleatoria entre la mitad y el total, para que los equipos no reintenten todos juntos.
+- Si el servidor rechaza el registro de forma definitiva, deja de reintentar y lo marca como rechazado.
+- Al recibir un registro nuevo de la misma sesión, el anterior se reemplaza y los reintentos vuelven a cero.
+- Borrar una jornada local, o todas desde la barra de datos, cancela también sus envíos pendientes: lo que se borra no se sube.
+- Cada comprobación sobre la cola o sobre el resumen local se hace en el mismo paso que la escritura (una sola transacción), así que un guardado de la misma sesión durante un envío nunca se pierde ni se borra.
+
+**Borrado local tras el envío.** El resumen local se borra solo cuando el servidor confirma el envío, y solo si sigue siendo exactamente el registro enviado. Si cambió mientras se enviaba, se conserva y se envía la versión nueva. Con el envío pendiente, fallido o rechazado, el resumen y su lugar en la cola se conservan. Las jornadas enviadas y borradas dejan de verse en los tableros locales: desde ese momento se consultan en el tablero de la base analítica. El borrado se puede desactivar (`purgeAfterSync: false`).
+
+**Transporte a Supabase.** El backend de referencia es Supabase (Postgres). Se accede con `fetch` directo, sin SDK (`src/store/supabase-transport.js`).
+
+- **Envío:** cada jornada se envía con un `POST` a la función `upsert_workdays(payload jsonb)`, con el sobre `vd-des-workdays/1`. El encabezado lleva la clave pública *anon* del proyecto y un **token de subida** (`x-upload-token`).
+- **Errores sin reintento:** 400, 401, 403, 404, 409, 413 y 422 marcan el error como permanente, y la jornada queda en estado `rejected` en la cola.
+- **Errores con reintento:** 408, 425, 429, los 5xx, la falta de conexión y el tiempo agotado (15 s por defecto) se reintentan con la espera del servicio de envío.
+- **Mensajes de error:** nunca incluyen el token ni la clave.
+- **Sin configuración, no hay envío:** el transporte no tiene dirección ni credenciales por defecto. Las credenciales nunca se guardan en el repositorio; se cargan en cada equipo al activar el envío (F3).
+
+**Base de datos de referencia (`supabase/workday_sync.sql`).**
+
+- **Tabla:** `workday_sync` tiene una fila por clave de sincronización (`sessionUuid`, o `id` si falta), columnas para filtrar (escuela, docente, aula, fecha, unidades, versión) y el resumen completo en `record`.
+- **Idempotencia:** la función hace *upsert* por esa clave, así que un reintento o una versión nueva de la misma sesión reemplaza la fila y no la duplica.
+- **Controles de la función:**
+  - valida el token contra su hash SHA-256 en `upload_tokens`;
+  - solo acepta jornadas de la escuela del token;
+  - aplica la misma lista cerrada de campos que el cliente;
+  - rechaza las sesiones en curso;
+  - nunca sobrescribe la fila de otra escuela.
+- **Acceso:** los roles `anon` y `authenticated` no tienen permisos directos sobre las tablas. Quienes analizan leen por RLS, limitados a su escuela (`analysts`).
+- **Retiro del consentimiento:** la función `delete_participant_workdays` borra todo lo de un código. Solo puede usarla el rol de servicio.
 
 ## 15. Instalación y ejecución
 
@@ -753,6 +838,7 @@ La salida correcta es un índice experimental de carga vocal calculada. No debe 
 | 0.4.0 | 2026-11-18 | Calibración acústica con tono de referencia, deriva pre/post, presión en Pa y nivel en dB SPL en el CSV, `P_0 = 1 Pa` con calibración, y dosis de distancia `D_d` de Titze, Švec y Popolo (2003) |
 | 0.6.0 | 2026-11-20 | Evaluación acústica PRE–POST (§23): /a/ sostenida y texto estándar analizados en memoria y borrados; F0, CPP/CPPS, HNR, LTAS, cepstro medio, jitter y shimmer exploratorios; EVA de esfuerzo, molestia y sequedad; registro `VOICE_ACOUSTIC_ASSESSMENT` |
 | 0.7.0 | 2026-11-22 | Intensidad normalizada a la voz propia sin calibración (§10.1): `I = 1` a la voz normal del enrolamiento, dosis comparables entre celulares, `ownVoiceRefDbfs` en la jornada y en los CSV; `D_d` oculta en la interfaz |
+| 0.8.0 | 2026-11-22 | Captura que avisa y pausa ante micrófono perdido, audio suspendido o página oculta, con wake lock; autoguardado periódico de la jornada con recuperación tras cierre inesperado (§12.2); `parameters` del CSV solo en la primera fila (§13); exportación del CSV por bloques de 10 000 filas, sin un texto único del tamaño del documento, y exportación optativa comprimida `.csv.gz` (§13); contrato de envío de resúmenes de jornada a una base analítica, con `sessionUuid` y `deviceId` optativos (§14.1) |
 
 ## 23. Evaluación acústica PRE–POST
 

@@ -8,10 +8,8 @@ import { quantile } from '../stats/descriptive.js';
 import { DEFAULT_IDENTITY_CONFIG, enrollProfile, ownAcceptance } from '../dsp/speaker-profile.js';
 import {
   ALGORITHM_VERSION,
-  buildCsv,
-  escapeCsvCell,
+  createFrameRecordLog,
   formatFrameRow,
-  serializeCsvRow,
   serializeParameters,
 } from '../export/csv-exporter.js';
 import { createVocalLoadState, resolveDistanceDoseOptions, stepVocalLoad } from '../vocal-load.js';
@@ -64,14 +62,14 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
   let load = null;
   let latest = null;
   let similarityThreshold = classifierConfig?.identity?.acceptThreshold ?? DEFAULT_IDENTITY_CONFIG.acceptThreshold;
-  let records = []; // serialised CSV lines of the current / last session (spec §13)
+  const records = createFrameRecordLog(); // rows of the current / last session (spec §13)
   let sessionParams = null;
   let firstSample = null;
   let acousticCalibration = null; // latest pre calibration, applied at the next start()
   let sessionCalibration = null; // pre calibration used by the current / last session
   let postCalibration = null;
   let drift = null;
-  let recordedParameters = null; // parameters cell as serialised in the records, rewritten at export
+  let recordedParameters = null; // parameters at start(); the post calibration appends to them
   let distanceDoseInput = null; // options for the distance dose, applied at the next start()
   let distanceDoseOptions = null; // the same, resolved
   const stats = {
@@ -321,7 +319,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
       }),
     };
     recordedParameters = sessionParams.parameters;
-    records = [];
+    records.clear();
     firstSample = null;
     mode = MODES.MEASURING;
     return load;
@@ -345,19 +343,16 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
   }
 
   /**
-   * CSV of the current or last session; null when nothing was recorded. Session-level
-   * parameters added after recording (post calibration) are written into every row.
+   * CSV of the current or last session; null when nothing was recorded. The parameters,
+   * including those added after recording (post calibration), go on the first row.
    */
   function exportCsv() {
-    if (records.length === 0) return null;
-    if (sessionParams.parameters === recordedParameters) return buildCsv(records);
-    const before = escapeCsvCell(recordedParameters);
-    const after = escapeCsvCell(sessionParams.parameters);
-    // The parameters cell is followed only by numeric cells, so its last occurrence is the cell itself.
-    return buildCsv(records.map((line) => {
-      const at = line.lastIndexOf(before);
-      return line.slice(0, at) + after + line.slice(at + before.length);
-    }));
+    return records.toCsv(sessionParams?.parameters ?? '');
+  }
+
+  /** The same CSV as lazy chunks for the download (see createFrameRecordLog); null when nothing was recorded. */
+  function exportCsvChunks(options) {
+    return records.length === 0 ? null : records.chunks(sessionParams?.parameters ?? '', options);
   }
 
   function measure(samples, startSample) {
@@ -367,7 +362,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     // Audio-clock timestamp: paused intervals show up as gaps between rows.
     if (firstSample === null && startSample !== undefined) firstSample = startSample;
     const timestamp = firstSample === null ? result.analysis.timestamp : (startSample - firstSample) / sampleRate;
-    records.push(serializeCsvRow(formatFrameRow(result.analysis, load, { ...sessionParams, timestamp })));
+    records.push(formatFrameRow(result.analysis, load, { ...sessionParams, timestamp }));
     latest = { analysis: result.analysis, load, timestamp };
     emit({ type: 'frame', analysis: result.analysis, load, timestamp });
   }
@@ -404,6 +399,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     resume,
     stop,
     exportCsv,
+    exportCsvChunks,
     setSimilarityThreshold,
     setDistanceDoseOptions,
     subscribe(fn) {
