@@ -20,3 +20,7 @@ yarn-debug.log*
 *.webm
 recordings/
 exports/
+
+# Credenciales locales (nunca en el repositorio)
+.env
+.env.*

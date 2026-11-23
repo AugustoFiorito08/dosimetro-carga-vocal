@@ -697,6 +697,27 @@ Como resguardo, el contrato rechaza cualquier arreglo de más de 100 valores num
 
 **Borrado local tras el envío.** El resumen local se borra solo cuando el servidor confirma el envío, y solo si sigue siendo exactamente el registro enviado. Si cambió mientras se enviaba, se conserva y se envía la versión nueva. Con el envío pendiente, fallido o rechazado, el resumen y su lugar en la cola se conservan. Las jornadas enviadas y borradas dejan de verse en los tableros locales: desde ese momento se consultan en el tablero de la base analítica. El borrado se puede desactivar (`purgeAfterSync: false`).
 
+**Transporte a Supabase.** El backend de referencia es Supabase (Postgres). Se accede con `fetch` directo, sin SDK (`src/store/supabase-transport.js`).
+
+- **Envío:** cada jornada se envía con un `POST` a la función `upsert_workdays(payload jsonb)`, con el sobre `vd-des-workdays/1`. El encabezado lleva la clave pública *anon* del proyecto y un **token de subida** (`x-upload-token`).
+- **Errores sin reintento:** 400, 401, 403, 404, 409, 413 y 422 marcan el error como permanente, y la jornada queda en estado `rejected` en la cola.
+- **Errores con reintento:** 408, 425, 429, los 5xx, la falta de conexión y el tiempo agotado (15 s por defecto) se reintentan con la espera del servicio de envío.
+- **Mensajes de error:** nunca incluyen el token ni la clave.
+- **Sin configuración, no hay envío:** el transporte no tiene dirección ni credenciales por defecto. Las credenciales nunca se guardan en el repositorio; se cargan en cada equipo al activar el envío (F3).
+
+**Base de datos de referencia (`supabase/workday_sync.sql`).**
+
+- **Tabla:** `workday_sync` tiene una fila por clave de sincronización (`sessionUuid`, o `id` si falta), columnas para filtrar (escuela, docente, aula, fecha, unidades, versión) y el resumen completo en `record`.
+- **Idempotencia:** la función hace *upsert* por esa clave, así que un reintento o una versión nueva de la misma sesión reemplaza la fila y no la duplica.
+- **Controles de la función:**
+  - valida el token contra su hash SHA-256 en `upload_tokens`;
+  - solo acepta jornadas de la escuela del token;
+  - aplica la misma lista cerrada de campos que el cliente;
+  - rechaza las sesiones en curso;
+  - nunca sobrescribe la fila de otra escuela.
+- **Acceso:** los roles `anon` y `authenticated` no tienen permisos directos sobre las tablas. Quienes analizan leen por RLS, limitados a su escuela (`analysts`).
+- **Retiro del consentimiento:** la función `delete_participant_workdays` borra todo lo de un código. Solo puede usarla el rol de servicio.
+
 ## 15. Instalación y ejecución
 
 1. Descomprimir `dosimetro_carga_vocal_hablante_v0.3.zip`.
