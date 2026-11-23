@@ -185,17 +185,21 @@ export function csvFileName(date = new Date(), prefix = 'dosimetro') {
   return `${prefix}_${stamp}.csv`;
 }
 
+const CSV_MIME = 'text/csv;charset=utf-8';
+export const GZIP_MIME = 'application/gzip';
+
 /**
- * Browser download through a Blob URL. Dependencies are injectable for tests.
- * `content` is the CSV text or an iterable of its chunks (createFrameRecordLog().chunks()):
- * each chunk becomes a small Blob as soon as it is produced, so the whole document never
- * exists as a single JavaScript string.
+ * The CSV as a Blob. `content` is the CSV text or an iterable of its chunks
+ * (createFrameRecordLog().chunks()): each chunk becomes a small Blob as soon as it is
+ * produced, so the whole document never exists as a single JavaScript string.
  * @param {string | Iterable<string>} content
- * @returns {string} the file name used
  */
-export function downloadCsv(content, { fileName = csvFileName(), doc = globalThis.document, url = globalThis.URL } = {}) {
+function csvBlob(content) {
   const parts = typeof content === 'string' ? [content] : Array.from(content, (chunk) => new Blob([chunk]));
-  const blob = new Blob(parts, { type: 'text/csv;charset=utf-8' });
+  return new Blob(parts, { type: CSV_MIME });
+}
+
+function downloadBlob(blob, fileName, { doc = globalThis.document, url = globalThis.URL } = {}) {
   const href = url.createObjectURL(blob);
   const link = doc.createElement('a');
   link.href = href;
@@ -206,4 +210,65 @@ export function downloadCsv(content, { fileName = csvFileName(), doc = globalThi
   link.remove();
   setTimeout(() => url.revokeObjectURL(href), 0);
   return fileName;
+}
+
+/**
+ * Browser download of the plain CSV through a Blob URL. Dependencies are injectable for tests.
+ * @param {string | Iterable<string>} content CSV text or its chunks (see csvBlob)
+ * @returns {string} the file name used
+ */
+export function downloadCsv(content, { fileName = csvFileName(), doc, url } = {}) {
+  return downloadBlob(csvBlob(content), fileName, { doc, url });
+}
+
+/** `CompressionStreamClass` given explicitly (even undefined) wins over the global, so tests can remove it. */
+const compressionClass = (options) =>
+  ('CompressionStreamClass' in options ? options.CompressionStreamClass : globalThis.CompressionStream);
+
+/** Whether this environment can gzip (CompressionStream: Chrome 80+, Safari 16.4+, Firefox 113+, Node 18+). */
+export function supportsGzip(options = {}) {
+  return typeof compressionClass(options) === 'function';
+}
+
+async function gzipBlob(blob, CompressionStreamClass) {
+  const reader = blob.stream().pipeThrough(new CompressionStreamClass('gzip')).getReader();
+  const parts = [];
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+  }
+  return new Blob(parts, { type: GZIP_MIME });
+}
+
+/**
+ * The CSV compressed with gzip; decompressed, it is byte for byte the plain CSV.
+ * @param {string | Iterable<string>} content CSV text or its chunks
+ * @param {{ CompressionStreamClass?: typeof CompressionStream }} [options]
+ * @returns {Promise<Blob>} rejects when gzip is unavailable or fails
+ */
+export async function gzipCsv(content, options = {}) {
+  if (!supportsGzip(options)) throw new Error('gzip compression is not available in this browser');
+  return gzipBlob(csvBlob(content), compressionClass(options));
+}
+
+/**
+ * Optional compressed download: `<fileName>.gz`. Never throws for a missing or failing
+ * CompressionStream; it downloads the plain CSV instead and says why.
+ * @param {string | Iterable<string>} content CSV text or its chunks
+ * @returns {Promise<{ fileName: string, compressed: true } |
+ *   { fileName: string, compressed: false, reason: 'unsupported' | 'failed', error?: Error }>}
+ */
+export async function downloadCsvGzip(content, { fileName = csvFileName(), doc, url, ...options } = {}) {
+  const plain = csvBlob(content);
+  if (!supportsGzip(options)) {
+    return { fileName: downloadBlob(plain, fileName, { doc, url }), compressed: false, reason: 'unsupported' };
+  }
+  let gz;
+  try {
+    gz = await gzipBlob(plain, compressionClass(options));
+  } catch (error) {
+    return { fileName: downloadBlob(plain, fileName, { doc, url }), compressed: false, reason: 'failed', error };
+  }
+  return { fileName: downloadBlob(gz, `${fileName}.gz`, { doc, url }), compressed: true };
 }

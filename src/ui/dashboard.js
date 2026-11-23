@@ -5,7 +5,7 @@ import { MODES } from '../audio/session-controller.js';
 import { hasUnsavedWork } from '../audio/session-lifecycle.js';
 import { splFromPressure } from '../dsp/acoustic-calibration.js';
 import { toDb } from '../dsp/signal-quality.js';
-import { ALGORITHM_VERSION, csvFileName, downloadCsv } from '../export/csv-exporter.js';
+import { ALGORITHM_VERSION, csvFileName, downloadCsv, downloadCsvGzip, supportsGzip } from '../export/csv-exporter.js';
 import { detectEvents } from '../store/auto-events.js';
 import { buildWorkday, validateCode } from '../store/workday.js';
 import { createIndexedDbRepository } from '../store/workday-repository.js';
@@ -538,11 +538,27 @@ el.finish.addEventListener('click', () => {
   autosave?.checkpoint(); // kept until the manual save replaces it or the session is discarded
   say(`Sesión finalizada: ${manager.session.recordCount} tramas registradas. Exportá el CSV para conservarlas.`);
 });
-el.export.addEventListener('click', () => {
+// Optional .csv.gz: the plain .csv stays the default; without CompressionStream the option is off.
+const gzipOption = $('export-gzip');
+if (!supportsGzip()) {
+  gzipOption.disabled = true;
+  gzipOption.parentElement.title = 'Este navegador no puede comprimir: se exporta el .csv sin comprimir.';
+}
+let exporting = false;
+el.export.addEventListener('click', async () => {
   const chunks = manager.session?.exportCsvChunks(); // pieces of ~10 000 rows, never one huge string
   if (!chunks) return say('No hay tramas registradas para exportar.', 'error');
-  const name = downloadCsv(chunks, { fileName: csvFileName(sessionStartedAt ?? new Date()) });
-  say(`CSV exportado: ${name}`);
+  const fileName = csvFileName(sessionStartedAt ?? new Date());
+  if (!gzipOption.checked) return say(`CSV exportado: ${downloadCsv(chunks, { fileName })}`);
+  exporting = true;
+  say('Comprimiendo el CSV…');
+  try {
+    const result = await downloadCsvGzip(chunks, { fileName });
+    if (result.compressed) say(`CSV comprimido exportado: ${result.fileName}`);
+    else say(`No se pudo comprimir (${result.reason === 'unsupported' ? 'el navegador no lo permite' : result.error.message}); se exportó sin comprimir: ${result.fileName}`, 'error');
+  } finally {
+    exporting = false;
+  }
 });
 
 // ---------- render loop ----------
@@ -565,7 +581,7 @@ function renderControls(session) {
   el.pause.disabled = mode !== MODES.MEASURING;
   el.resume.disabled = mode !== MODES.PAUSED;
   el.finish.disabled = mode !== MODES.MEASURING && mode !== MODES.PAUSED;
-  el.export.disabled = !(idle || mode === MODES.PAUSED) || !session?.recordCount;
+  el.export.disabled = exporting || !(idle || mode === MODES.PAUSED) || !session?.recordCount;
   const measuring = mode === MODES.MEASURING || mode === MODES.PAUSED;
   $('jr-event-type').disabled = !measuring;
   $('jr-event-add').disabled = !measuring;

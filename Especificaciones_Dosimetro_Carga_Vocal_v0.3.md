@@ -623,6 +623,8 @@ Con dosis de distancia, los parámetros incluyen `ddProfile`, `ddOffsetDb`, `ddO
 
 Las columnas nuevas se agregan al final para no alterar la posición de las existentes.
 
+**Exportación comprimida (opcional).** Por defecto se descarga el `.csv` sin comprimir. Con la casilla «Comprimir (.csv.gz)» se descarga el mismo CSV comprimido con gzip (`application/gzip`): al descomprimirlo es idéntico byte a byte al `.csv`, y una jornada de 8 h pasa de unos 148 MB a unos 26 MB. R (`read.csv`, `readr`) y pandas lo leen sin descomprimir; las planillas necesitan descomprimirlo antes. Si el navegador no tiene `CompressionStream`, la casilla queda deshabilitada; si la compresión falla, se descarga el `.csv` sin comprimir y se avisa. La exportación arma el archivo por bloques de 10 000 filas, sin un texto único del tamaño del documento.
+
 La conservación de scores continuos permite recalcular decisiones con nuevos umbrales sin repetir la medición.
 
 ## 14. Privacidad

@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { gunzipSync } from 'node:zlib';
 
 import {
   ALGORITHM_VERSION,
@@ -10,6 +11,9 @@ import {
   csvFileName,
   csvHeader,
   downloadCsv,
+  downloadCsvGzip,
+  gzipCsv,
+  supportsGzip,
   escapeCsvCell,
   formatFrameRow,
   formatNumber,
@@ -302,5 +306,81 @@ describe('chunked CSV export (no single document-sized string)', () => {
     downloadCsv(filledLog().chunks('x=1', { rowsPerChunk: 2 }), { fileName: 'c.csv', doc, url });
     assert.equal(blob.type, 'text/csv;charset=utf-8');
     assert.equal(await blob.text(), reference('x=1'));
+  });
+});
+
+describe('optional .csv.gz export (CompressionStream)', () => {
+  function bigLog(rows = 3000) {
+    const log = createFrameRecordLog();
+    for (let k = 0; k < rows; k++) log.push(formatFrameRow({ ...(k % 3 ? attributed : silenceFrame), timestamp: k * 0.064 }, load, { parameters: 'x=1' }));
+    return log;
+  }
+  function fakeBrowser() {
+    const downloads = [];
+    const link = { style: {}, click() { downloads.push({ name: link.download, blob }); }, remove() {} };
+    const doc = { createElement: () => link, body: { append() {} } };
+    let blob = null;
+    const url = { createObjectURL: (b) => ((blob = b), 'blob:z'), revokeObjectURL() {} };
+    return { doc, url, downloads };
+  }
+  const bytes = async (blob) => Buffer.from(await blob.arrayBuffer());
+
+  it('detects support for gzip compression', () => {
+    assert.equal(supportsGzip(), true, 'Node and current browsers provide CompressionStream');
+    assert.equal(supportsGzip({ CompressionStreamClass: undefined }), false);
+  });
+
+  it('gzipCsv decompresses to exactly the plain CSV, and is much smaller', async () => {
+    const log = bigLog();
+    const gz = await gzipCsv(log.chunks('x=1', { rowsPerChunk: 500 }));
+    assert.equal(gz.type, 'application/gzip');
+    const raw = await bytes(gz);
+    assert.deepEqual([raw[0], raw[1]], [0x1f, 0x8b], 'gzip magic number');
+    const plain = log.toCsv('x=1');
+    assert.equal(gunzipSync(raw).toString('utf8'), plain);
+    assert.ok(raw.length < plain.length / 4, `${raw.length} vs ${plain.length} bytes`);
+  });
+
+  it('downloads a .csv.gz with the gzip MIME type when asked', async () => {
+    const log = bigLog(10);
+    const { doc, url, downloads } = fakeBrowser();
+    const result = await downloadCsvGzip(log.chunks('x=1'), { fileName: 'dosimetro_x.csv', doc, url });
+    assert.deepEqual(result, { fileName: 'dosimetro_x.csv.gz', compressed: true });
+    assert.equal(downloads[0].name, 'dosimetro_x.csv.gz');
+    assert.equal(downloads[0].blob.type, 'application/gzip');
+    assert.equal(gunzipSync(await bytes(downloads[0].blob)).toString('utf8'), log.toCsv('x=1'));
+  });
+
+  it('falls back to the plain .csv, without throwing, when CompressionStream is missing', async () => {
+    const log = bigLog(10);
+    const { doc, url, downloads } = fakeBrowser();
+    const result = await downloadCsvGzip(log.chunks('x=1'), { fileName: 'd.csv', doc, url, CompressionStreamClass: undefined });
+    assert.deepEqual(result, { fileName: 'd.csv', compressed: false, reason: 'unsupported' });
+    assert.equal(downloads[0].blob.type, 'text/csv;charset=utf-8');
+    assert.equal(await downloads[0].blob.text(), log.toCsv('x=1'));
+  });
+
+  it('falls back to the plain .csv when compression fails midway', async () => {
+    class BrokenCompression {
+      constructor() {
+        const ts = new TransformStream({ transform() { throw new Error('codec crashed'); } });
+        this.readable = ts.readable;
+        this.writable = ts.writable;
+      }
+    }
+    const log = bigLog(10);
+    const { doc, url, downloads } = fakeBrowser();
+    const result = await downloadCsvGzip(log.chunks('x=1'), { fileName: 'd.csv', doc, url, CompressionStreamClass: BrokenCompression });
+    assert.equal(result.compressed, false);
+    assert.equal(result.reason, 'failed');
+    assert.match(result.error.message, /codec crashed/);
+    assert.equal(downloads.length, 1, 'exactly one download, the plain CSV');
+    assert.equal(downloads[0].name, 'd.csv');
+    assert.equal(await downloads[0].blob.text(), log.toCsv('x=1'));
+  });
+
+  it('accepts plain text too', async () => {
+    const gz = await gzipCsv('a,b\r\n1,2\r\n');
+    assert.equal(gunzipSync(await bytes(gz)).toString('utf8'), 'a,b\r\n1,2\r\n');
   });
 });
