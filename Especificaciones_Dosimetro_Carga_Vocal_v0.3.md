@@ -680,7 +680,22 @@ Como resguardo, el contrato rechaza cualquier arreglo de más de 100 valores num
 - Se usan solo códigos.
 - Los tableros mantienen la supresión de grupos de menos de 3 docentes.
 - Se debe poder borrar todo lo asociado a un código si la persona retira su consentimiento.
-- El transporte (cola sin conexión, reintentos, autenticación) y el proveedor quedan fuera de este contrato.
+- El transporte (HTTP, autenticación) y el proveedor quedan fuera de este contrato.
+
+**Cola de envío y reintentos.** La base local pasa a la versión 2, que agrega el almacén `outbox`. La migración desde la versión 1 solo crea ese almacén y conserva intactas las jornadas guardadas. Si otra pestaña tiene abierta la versión anterior, se pide cerrarla y recargar.
+
+- Al guardar una jornada final medida en el equipo (`source = live`), ya sea con «Guardar jornada» o al cerrar el autoguardado, se encola su registro de envío.
+- También se encolan las jornadas recuperadas.
+- No se encolan los autoguardados en curso ni las jornadas importadas o de demostración.
+- Si falla el encolado, el guardado local sigue siendo válido: se avisa y la jornada queda en el equipo.
+- El servicio de envío (`src/store/sync-service.js`) toma de a una las jornadas pendientes cuyo turno llegó, solo con conexión, y nunca hace dos rondas a la vez.
+- Ante un error transitorio reintenta con espera exponencial: base × 2^(intento − 1), con un máximo; por defecto, 30 s y 1 h. Le suma una variación aleatoria entre la mitad y el total, para que los equipos no reintenten todos juntos.
+- Si el servidor rechaza el registro de forma definitiva, deja de reintentar y lo marca como rechazado.
+- Al recibir un registro nuevo de la misma sesión, el anterior se reemplaza y los reintentos vuelven a cero.
+- Borrar una jornada local, o todas desde la barra de datos, cancela también sus envíos pendientes: lo que se borra no se sube.
+- Cada comprobación sobre la cola o sobre el resumen local se hace en el mismo paso que la escritura (una sola transacción), así que un guardado de la misma sesión durante un envío nunca se pierde ni se borra.
+
+**Borrado local tras el envío.** El resumen local se borra solo cuando el servidor confirma el envío, y solo si sigue siendo exactamente el registro enviado. Si cambió mientras se enviaba, se conserva y se envía la versión nueva. Con el envío pendiente, fallido o rechazado, el resumen y su lugar en la cola se conservan. Las jornadas enviadas y borradas dejan de verse en los tableros locales: desde ese momento se consultan en el tablero de la base analítica. El borrado se puede desactivar (`purgeAfterSync: false`).
 
 ## 15. Instalación y ejecución
 
