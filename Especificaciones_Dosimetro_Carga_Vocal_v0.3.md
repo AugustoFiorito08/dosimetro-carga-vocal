@@ -802,7 +802,7 @@ La salida correcta es un índice experimental de carga vocal calculada. No debe 
 | 0.4.0 | 2026-11-18 | Calibración acústica con tono de referencia, deriva pre/post, presión en Pa y nivel en dB SPL en el CSV, `P_0 = 1 Pa` con calibración, y dosis de distancia `D_d` de Titze, Švec y Popolo (2003) |
 | 0.6.0 | 2026-11-20 | Evaluación acústica PRE–POST (§23): /a/ sostenida y texto estándar analizados en memoria y borrados; F0, CPP/CPPS, HNR, LTAS, cepstro medio, jitter y shimmer exploratorios; EVA de esfuerzo, molestia y sequedad; registro `VOICE_ACOUSTIC_ASSESSMENT` |
 | 0.7.0 | 2026-11-22 | Intensidad normalizada a la voz propia sin calibración (§10.1): `I = 1` a la voz normal del enrolamiento, dosis comparables entre celulares, `ownVoiceRefDbfs` en la jornada y en los CSV; `D_d` oculta en la interfaz |
-| 0.8.0 | 2026-11-22 | Captura que avisa y pausa ante micrófono perdido, audio suspendido o página oculta, con wake lock; autoguardado periódico de la jornada con recuperación tras cierre inesperado (§12.2); `parameters` del CSV solo en la primera fila (§13) |
+| 0.8.0 | 2026-11-22 | Captura que avisa y pausa ante micrófono perdido, audio suspendido o página oculta, con wake lock; autoguardado periódico de la jornada con recuperación tras cierre inesperado (§12.2); `parameters` del CSV solo en la primera fila (§13); exportación del CSV por bloques de 10 000 filas, sin un texto único del tamaño del documento, y exportación optativa comprimida `.csv.gz` (§13); contrato de envío de resúmenes de jornada a una base analítica, con `sessionUuid` y `deviceId` optativos (§14.1) |
 
 ## 23. Evaluación acústica PRE–POST
 
