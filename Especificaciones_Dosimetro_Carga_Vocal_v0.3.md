@@ -558,6 +558,8 @@ El paso **Jornada (tableros)** guarda un resumen de cada sesión (`vd-des-workda
 
 **Autoguardado.** Mientras la sesión mide o está en pausa, la jornada se guarda sola en IndexedDB cada 2 minutos y además al pausar, al finalizar, ante una interrupción de la captura y al ocultar o cerrar la página (en este último caso, sin garantía de que la escritura termine). Es el mismo registro `vd-des-workday/1` con el mismo identificador, reemplazado en su lugar, más un campo optativo `checkpoint: { status, savedAt }`: `in_progress` mientras la sesión sigue y `recovered` cuando se encuentra al abrir la aplicación tras un cierre inesperado (se conserva, aparece en los tableros y se avisa una sola vez). El guardado manual escribe el registro final sin ese campo; los registros sin `checkpoint`, incluidos todos los anteriores, son finales. Las escrituras se hacen de a una, en orden, y el guardado manual siempre es la última. Si el docente cambia el código durante la sesión, se borra el autoguardado con el código anterior. Iniciar una sesión nueva sin haber guardado la anterior pide confirmación y descarta su autoguardado. El autoguardado necesita los códigos de docente, escuela y aula; sin ellos se avisa y no se guarda. Nunca guarda audio.
 
+Cada jornada puede llevar además dos campos optativos para el envío a una base analítica (§14.1): `sessionUuid`, un UUID aleatorio de la sesión, y `deviceId`, un identificador aleatorio de la instalación.
+
 Las jornadas se exportan e importan como JSON (`vd-des-workdays/1`) para reunir las de varios equipos; al importar se omiten los identificadores ya presentes y se informan los registros inválidos.
 
 **Eventos automáticos (reglas provisionales):** fonación sostenida, cuando una ventana de 120 s tiene al menos 60 % de fonación (se recorta a sus bordes con voz); nivel elevado, cuando la voz supera durante 3 s o más la mediana de la propia jornada en 6 dB. Describen el patrón acústico; no identifican la actividad ni diagnostican fatiga.
@@ -638,6 +640,47 @@ La conservación de scores continuos permite recalcular decisiones con nuevos um
 - La base analítica debe utilizar identificadores codificados.
 - Las jornadas guardadas contienen solo resúmenes y códigos, quedan en el navegador del equipo y se pueden exportar o borrar desde la barra de datos.
 - Los tableros nunca muestran nombres y ocultan los grupos de menos de 3 docentes.
+
+### 14.1 Envío opcional a una base analítica
+
+El envío de resúmenes a una base de datos que alimente un tablero analítico es **optativo y está desactivado por defecto**. Se activa en cada equipo (*opt-in*), solo con consentimiento informado y con la aprobación ética del protocolo que lo prevea. Sin esa activación, nada sale del navegador.
+
+**Qué se envía.** Solo el resumen de la jornada (`vd-des-workday/1`). El contrato es una lista cerrada de campos (`SYNC_FIELDS`, `src/store/workday-sync.js`):
+
+- identificación: `schema`, `id` y, si existen, `sessionUuid` y `deviceId`;
+- códigos seudónimos: `participantId`, `schoolId`, `classroom`;
+- jornada: `date`, `startedAt`, `durationS`, `phonationS`, `validRatio`;
+- carga: `doses`, `hMax`, percentiles de `f0` y `level`, `units`, `ownVoiceRefDbfs`, `timeline` (dosis por minuto);
+- contexto: `events` (incluidas las interrupciones de captura), `fatigue`, `assessment` (EVA y medidas PRE–POST, sin audio);
+- procedencia: `algorithmVersion`, `source` y, si corresponde, `checkpoint`.
+
+Todo campo fuera de la lista se descarta al armar el envío y se rechaza al recibirlo.
+
+**Qué no se envía nunca.**
+
+- Audio, ni crudo ni filtrado.
+- Tramas: el CSV por trama solo se exporta a mano (§13).
+- La plantilla del hablante (prototipos, distancias, rango de F0 del enrolamiento).
+- Nombres ni datos de contacto.
+
+Como resguardo, el contrato rechaza cualquier arreglo de más de 100 valores numéricos fuera de la línea de tiempo por minuto, que tiene como máximo 1440 valores.
+
+**Qué jornadas se envían.** Solo las guardadas y las recuperadas tras un cierre inesperado; estas llegan marcadas con `checkpoint.status = recovered`. Una sesión en curso (`in_progress`) nunca se envía.
+
+**Identidad y duplicados.**
+
+- `sessionUuid` es un UUID aleatorio de la sesión y es la clave de idempotencia: reenviar la misma jornada la reemplaza, no la duplica. Si falta, se usa `id`.
+- `deviceId` es un identificador aleatorio de la instalación, nunca un identificador del hardware.
+- Ambos campos son optativos y no cambian la versión del esquema: los registros anteriores siguen siendo válidos.
+
+**Formato.** El envío usa el mismo sobre que la exportación JSON (`vd-des-workdays/1`: `format`, `exportedAt`, `workdays`), así que un archivo exportado a mano y un envío se cargan igual. Para el servidor se publica un JSON Schema del registro (`WORKDAY_SYNC_JSON_SCHEMA`). La referencia es el validador `validateSyncRecord`, que además aplica el resguardo contra contenido de audio.
+
+**En la base analítica.**
+
+- Se usan solo códigos.
+- Los tableros mantienen la supresión de grupos de menos de 3 docentes.
+- Se debe poder borrar todo lo asociado a un código si la persona retira su consentimiento.
+- El transporte (cola sin conexión, reintentos, autenticación) y el proveedor quedan fuera de este contrato.
 
 ## 15. Instalación y ejecución
 
