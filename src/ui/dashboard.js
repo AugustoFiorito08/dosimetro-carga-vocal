@@ -2,6 +2,7 @@
 // update runs inside requestAnimationFrame, decoupled from the worklet messages.
 import { createAudioManager } from '../audio/audio-manager.js';
 import { MODES } from '../audio/session-controller.js';
+import { hasUnsavedWork } from '../audio/session-lifecycle.js';
 import { splFromPressure } from '../dsp/acoustic-calibration.js';
 import { toDb } from '../dsp/signal-quality.js';
 import { ALGORITHM_VERSION, csvFileName, downloadCsv } from '../export/csv-exporter.js';
@@ -60,6 +61,19 @@ const START_ERRORS = {
   distance_dose_needs_calibration:
     'No se inició la sesión: la dosis de distancia necesita la calibración acústica. Calibrá con el tono de referencia o elegí «Sin dosis de distancia».',
 };
+const INTERRUPTION_LABELS = {
+  track_ended: 'el micrófono se desconectó o se revocó el permiso',
+  context_suspended: 'el navegador suspendió el audio',
+  context_interrupted: 'el sistema interrumpió el audio (llamada u otra app)',
+  context_closed: 'el navegador cerró el audio',
+};
+const INTERRUPTION_ACTIONS = {
+  paused: 'La sesión quedó en pausa y el hueco quedó marcado en la jornada.',
+  cancelled: 'La tarea en curso se canceló; repetila cuando vuelva el audio.',
+  none: '',
+};
+/** Hidden for less than this is not worth a notice when capture went on. */
+const HIDDEN_NOTICE_MS = 5000;
 const CALIBRATION_REASONS = {
   too_short: 'el tono fue demasiado corto',
   clipping: 'el tono satura la entrada; bajá la ganancia',
@@ -227,9 +241,10 @@ const vasValue = (id) => {
   if (!(v >= 0 && v <= 100)) throw new RangeError('La EVA debe estar entre 0 y 100.');
   return v;
 };
+const eventLabel = (e) => (e.note?.startsWith('interrupcion:') ? `Interrupción de captura${e.durationS ? ` (${duration(e.durationS)})` : ''}` : EVENT_LABELS[e.type]);
 function renderWorkdayEvents() {
   setText($('jr-events'), workdayEvents.length
-    ? workdayEvents.map((e) => `${duration(e.t)} ${EVENT_LABELS[e.type]}`).join(' · ')
+    ? workdayEvents.map((e) => `${duration(e.t)} ${eventLabel(e)}`).join(' · ')
     : 'Sin eventos marcados.');
 }
 const assessment = createVoiceAssessmentPanel({
@@ -392,6 +407,40 @@ el['dd-method'].addEventListener('change', () => {
   el['dd-value'].value = measured ? '20' : '5';
 });
 
+// ---------- capture lifecycle (microphone, AudioContext, visibility, exit) ----------
+let openGap = null; // workday event of the interruption in course, closed when audio returns
+function onLifecycleEvent(event) {
+  if (event.type === 'interrupted') {
+    if (event.action === 'paused') {
+      openGap = { t: event.timestamp ?? 0, type: 'otro', source: 'algoritmo', note: `interrupcion:${event.reason}` };
+      workdayEvents.push(openGap);
+      renderWorkdayEvents();
+    }
+    const next = event.reason === 'track_ended'
+      ? ' Finalizá y guardá la jornada; reconectar el micrófono inicia una sesión nueva.'
+      : event.action === 'paused' ? ' Cuando vuelva el audio, tocá Continuar.' : '';
+    say(`Captura interrumpida: ${INTERRUPTION_LABELS[event.reason]}. ${INTERRUPTION_ACTIONS[event.action]}${next}`, 'error');
+  } else if (event.type === 'restored') {
+    if (openGap) openGap.durationS = event.interruptedMs / 1000;
+    openGap = null;
+    renderWorkdayEvents();
+    const paused = manager.session?.mode === MODES.PAUSED;
+    say(`El audio volvió tras ${duration(event.interruptedMs / 1000)} sin captura.${paused ? ' La sesión sigue en pausa: tocá Continuar.' : ''}`);
+  } else if (event.type === 'visible' && !manager.interruption && event.hiddenMs >= HIDDEN_NOTICE_MS) {
+    const measuring = manager.session?.mode === MODES.MEASURING;
+    if (measuring && event.capturing) say(`La página estuvo ${duration(event.hiddenMs / 1000)} en segundo plano; la captura siguió.`);
+  } else if (event.type === 'visible' && manager.interruption) {
+    say(`La captura sigue detenida: ${INTERRUPTION_LABELS[manager.interruption.reason]}.`, 'error');
+  }
+}
+manager.onLifecycle(onLifecycleEvent);
+
+window.addEventListener('beforeunload', (event) => {
+  if (!hasUnsavedWork({ session: manager.session, workdaySaved })) return;
+  event.preventDefault();
+  event.returnValue = ''; // older browsers need it to show the standard prompt
+});
+
 // ---------- session controls ----------
 el.start.addEventListener('click', () => {
   try {
@@ -401,7 +450,9 @@ el.start.addEventListener('click', () => {
     sessionStartedAt = new Date();
     resetScore(load, sessionStartedAt);
     workdayEvents = [];
+    openGap = null;
     workdaySaved = false;
+    manager.keepAwake(true);
     renderWorkdayEvents();
     setText($('jr-status'), 'Midiendo…');
     setText(el['dose-units'], DOSE_UNITS_TEXT[load.units](load));
@@ -412,14 +463,21 @@ el.start.addEventListener('click', () => {
 });
 el.pause.addEventListener('click', () => {
   manager.session.pause();
+  manager.keepAwake(false);
   say('Sesión en pausa. Podés continuar o exportar lo registrado hasta ahora.');
 });
-el.resume.addEventListener('click', () => {
+el.resume.addEventListener('click', async () => {
+  // A click is a user gesture, so a suspended context can be resumed here.
+  if (manager.interruption && !(await manager.resumeContext())) {
+    return say(`No se puede continuar: ${INTERRUPTION_LABELS[manager.interruption.reason]}.`, 'error');
+  }
   manager.session.resume();
+  manager.keepAwake(true);
   say('Sesión en curso.');
 });
 el.finish.addEventListener('click', () => {
   manager.session.stop();
+  manager.keepAwake(false);
   say(`Sesión finalizada: ${manager.session.recordCount} tramas registradas. Exportá el CSV para conservarlas.`);
 });
 el.export.addEventListener('click', () => {
@@ -457,7 +515,8 @@ function renderControls(session) {
   assessment.renderControls(session);
 
   setAttr(el['mode-dot'], 'data-mode', mode ?? 'none');
-  setText(el['mode-label'], mode ? MODE_LABELS[mode] : 'Sin audio');
+  const interrupted = mode !== null && manager.interruption !== null;
+  setText(el['mode-label'], mode ? `${MODE_LABELS[mode]}${interrupted ? ' · captura interrumpida' : ''}` : 'Sin audio');
 
   if (session) {
     const cal = session.acousticCalibration;
