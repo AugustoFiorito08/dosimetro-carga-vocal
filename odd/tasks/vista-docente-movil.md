@@ -20,14 +20,14 @@ Branch: `feat/vista-docente-movil` (from `feat/f3-supabase-vercel`) · Delivery:
 
 | ID | Specs | Route | Status | Commit |
 |---|---|---|---|---|
-| T1 | S2, S5 | inline | done (10 tests, RED→GREEN) | see log |
-| T2 | S5 | inline | done (refactor, behaviour unchanged; checked in the pane) | see log |
-| T3 | S1, S5 | inline | pending | |
-| T4 | S6 | inline | pending | |
-| T5 | S3, S7 | inline | pending | |
-| T6 | S8 | inline | pending | |
-| T7 | S4, S9 | inline | pending | |
-| T8 | S10 | inline | pending | |
+| T1 | S2, S5 | inline | done (RED→GREEN, 11 tests) | 5c5d467 |
+| T2 | S5 | inline | done (refactor, behaviour unchanged) | a1a0217 |
+| T3 | S1, S5 | inline | done (phone + desktop checked in the pane) | 1cbc161 |
+| T4 | S6 | inline | done (full flow with a synthetic microphone) | 1cbc161 |
+| T5 | S3, S7 | inline | done (F0 180 Hz, +3 dB at 1.4× the reference) | 1cbc161 |
+| T6 | S8 | inline | done (partitura drew after the width fix) | 913e231, 1cbc161 |
+| T7 | S4, S9 | inline | done (POST, save, summary, Mi jornada, history) | 1cbc161 |
+| T8 | S10 | inline | done (spec §12.6, §16) | docs commit |
 
 - T1 Pure models: teacher flow step from the session state; personal comparison (median, P75, n ≥ 5, cumulative dose at the same elapsed minute).
 - T2 Extract the session actions of `dashboard.js` into named functions both views call (no behaviour change).
@@ -41,3 +41,4 @@ Route evidence: no writer trigger (units depend on T2/T3 and share `dashboard.js
 - **L1** (2026-11-25, user): "ahora necesito mejorar la app que va en el celular. Sería la parte de preparación, panel en vivo, partitura vocal y mi jornada. Porque debe ser algo entendible para el docente cuando hace su dosimetría. Adjunto ejemplos de pantalla de celulares con su secuencia. ¿podrás hacerla?"
 - **L2** (2026-11-25, user, on how to show load without validated thresholds): "Contra su propia historia (Recomendado)".
 - **L3** Analysis: the mockups' yellow zone, C1/C2 gauge, "38 % carga del día", "¡ALTA CARGA VOCAL!", automatic "Actividad detectada" and "Cifrado" contradict the hitos document or the implementation; S2-S4 replace them. Next: T1.
+- **L4** (2026-11-25) T1-T8 done on `feat/vista-docente-movil`; 523 tests pass. Verified in the browser pane at 375×812 with a synthetic microphone (the pane blocks the real one): codes → microphone → silence → enrolment → reference → PRE → live → activity → finish → POST → save → summary → partitura → Mi jornada; the technical view keeps working and the views switch both ways. Found and fixed while verifying: the partitura took its width from the F0 track, hidden in the teacher view (913e231); the partitura was redrawn before its screen was visible; technical toasts (dBFS, P10-P90) replaced by plain messages during teacher actions; a weak enrolment now offers «Repetir» or «Seguir de todos modos» in place. Not verified: a real phone and microphone, and system notifications. Test data removed from the pane.

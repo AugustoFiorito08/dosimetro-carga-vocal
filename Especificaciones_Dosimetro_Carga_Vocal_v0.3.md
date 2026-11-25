@@ -595,6 +595,24 @@ Las AUC son aparentes (misma muestra); la validación agrupada por docente, los 
 
 **Datos simulados:** un conjunto reproducible (3 escuelas, aulas de al menos 3 docentes, 4 semanas hábiles, ausencias y EVA faltantes) permite ver los tableros sin datos reales. Siempre se muestra con el aviso "DATOS SIMULADOS" y nunca se mezcla con las jornadas guardadas. La fatiga simulada sigue la hipótesis nula del protocolo (la memoria no aporta), de modo que ningún modelo resulta favorecido por construcción: la demo no es evidencia. La recuperación simulada sigue F(t) = F_pre + ΔF·e^(−t/τ) con ruido, con τ creciente con `D_0` y alrededor de un horario de cada ocho sin registrar; usa su propia secuencia aleatoria, así que no cambia ningún otro valor simulado.
 
+### 12.6 Vista docente (celular)
+
+La docente usa una vista propia, pensada para el celular, con el mismo motor de medición que la vista técnica. Se abre sola en pantallas de hasta 760 px de ancho; el botón «Vista técnica» / «Vista docente» cambia de una a otra y la elección queda guardada en el navegador. La vista técnica conserva la calibración acústica, la dosis de distancia, el umbral de similitud, la exportación del CSV y los tableros de Dirección y Analítica.
+
+**Recorrido guiado**, una pantalla por vez, con el avance marcado arriba: datos (códigos seudónimos, que se recuerdan), micrófono (diadema a 2–3 cm de la boca), silencio del ambiente (5 s), reconocimiento de la voz (15 s: primero voz normal y, desde la mitad, voz de clase; si la app reconoce menos del 60 % de la voz de prueba, se ofrece repetir o seguir), voz habitual (lectura del texto estándar, 30 s; no hace falta si la sesión está calibrada), cómo está la voz antes de empezar (EVA de fatiga, esfuerzo, molestia y sequedad con barras deslizantes; la fatiga es obligatoria; las pruebas acústicas de §23 son optativas) e inicio.
+
+**Durante la jornada**: tiempo transcurrido; estado de la medición (micrófono, señal y voz reconocida en los últimos 10 s); tiempo y porcentaje hablado; pausa actual; F0 actual y su mediana del día; volumen en dB respecto de la voz habitual (dB SPL si la sesión está calibrada); carga acumulada (`D_0`, en vibraciones ponderadas por el volumen) y su comparación con la propia historia; «Marcar qué estoy haciendo» (explicando, llamando la atención, actividad grupal, recreo u otra), pausa y fin.
+
+**Comparación con la propia historia.** No hay umbrales validados, así que la carga no se muestra en zonas verde, amarilla o roja, ni como porcentaje de un límite, ni con alertas de «alta carga». Se compara la `D_0` acumulada con la que tuvieron las jornadas anteriores de la misma docente, con las mismas unidades, en el mismo minuto transcurrido (solo cuentan las jornadas que duraron al menos eso): por encima del P75 es «por encima de tu jornada habitual», entre la mediana y el P75 es «algo por encima de tu mediana» y el resto, «dentro de tu jornada habitual». Hacen falta 5 jornadas previas; antes se indica cuántas faltan. Al final se compara la jornada completa del mismo modo.
+
+**La actividad la marca la docente.** La app no la detecta: los eventos automáticos (§12.2) describen el patrón acústico, no la actividad.
+
+**Al terminar**: EVA POST con barras (fatiga obligatoria) y guardado. El resumen muestra duración, tiempo hablado, F0 mediana, cambio de fatiga, la comparación de la jornada, lo que marcó y el estado del envío, dicho como es: «guardada solo en este celular» si el envío no está activado; si lo está, «pendiente de envío» (se manda solo cuando hay conexión, por HTTPS, solo el resumen y sin audio), «enviada» o «la base del estudio no la aceptó».
+
+**Partitura** simplificada: cuándo habló, volumen de la voz y carga acumulada, con explicaciones en lenguaje llano, más la lista de lo que marcó. **Mi jornada** muestra la jornada elegida (carga acumulada, recuperación con avisos y calendario de §24, y eventos) y la lista de jornadas guardadas en el celular con su estado de envío.
+
+Las EVA y los códigos de la vista docente se escriben en los mismos campos que usa la vista técnica, así que ambas muestran siempre lo mismo.
+
 ## 13. Exportación de datos
 
 La aplicación exporta un archivo CSV por trama. Debe incluir, como mínimo:
@@ -745,6 +763,8 @@ http://localhost:8080/public/index.html
 El acceso a micrófono requiere un contexto seguro. `localhost` es admitido por los navegadores modernos para pruebas locales.
 
 ## 16. Secuencia de uso
+
+En el celular, la vista docente (§12.6) guía estos pasos uno por uno.
 
 1. Conectar el micrófono externo.
 2. Abrir la aplicación.
