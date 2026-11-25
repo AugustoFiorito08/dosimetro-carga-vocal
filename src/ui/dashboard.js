@@ -22,6 +22,7 @@ import { DEFAULT_MODEL_PARAMS, meanDuration, phonationPercentage } from '../voca
 import { createLoadChart, zoneFor } from './load-chart.js';
 import { createScoreChart } from './score-chart.js';
 import { createScoreSeries } from './score-series.js';
+import { createSecondSeries } from '../store/second-series.js';
 import { createSyncPanel } from './sync-panel.js';
 import { createVoiceAssessmentPanel } from './voice-assessment-panel.js';
 import { createTeacherApp, initialView } from './teacher/teacher-app.js';
@@ -165,6 +166,8 @@ const SCORE_DOSE_NAMES = {
   exponential: 'D<sub>E</sub>', saturating: 'D<sub>S</sub>', distance: 'D<sub>d</sub>',
 };
 const scoreSeries = createScoreSeries();
+/** Per-second phonated time and F0·I of the session, kept in the workday (perSecond). */
+const secondSeries = createSecondSeries();
 const score = createScoreChart($('tab-score'), { series: scoreSeries });
 const scoreDose = $('score-dose');
 
@@ -180,6 +183,7 @@ scoreDose.addEventListener('change', applyScoreDose);
 
 function resetScore(load, startDate) {
   scoreSeries.reset();
+  secondSeries.reset();
   const distanceOption = scoreDose.querySelector('option[value="distance"]');
   distanceOption.disabled = load.distanceDose === null;
   if (distanceOption.disabled && scoreDose.value === 'distance') scoreDose.value = 'none';
@@ -196,6 +200,7 @@ function recordScoreFrame({ analysis: a, load, timestamp }) {
     t: timestamp, dt: a.dt, phi: a.phi, f0: a.phi ? a.f0 : null, level: a.phi ? level : null,
     h: load.h, doses: load.doses, distanceDose: load.distanceDose,
   });
+  secondSeries.push({ dt: a.dt, phi: load.lastFrame?.phi ?? a.phi, f0: a.f0, intensity: load.lastFrame?.intensity ?? 0 });
   if (scoreSeries.length === 1) $('score-empty').hidden = true;
   score.invalidate();
 }
@@ -340,7 +345,7 @@ function currentWorkday({ lenient = false } = {}) {
     events: [...workdayEvents, ...detectEvents(scoreSeries)].sort((a, b) => a.t - b.t),
     assessment: assessment.forWorkday(),
   };
-  return buildWorkday({ meta, load: manager.session.load, series: scoreSeries, startedAt: sessionStartedAt, algorithmVersion: ALGORITHM_VERSION, source: 'live' });
+  return buildWorkday({ meta, load: manager.session.load, series: scoreSeries, seconds: secondSeries, startedAt: sessionStartedAt, algorithmVersion: ALGORITHM_VERSION, source: 'live' });
 }
 /** Saves the workday of the last session; resolves to it, or null when it could not be saved. */
 async function saveWorkday() {

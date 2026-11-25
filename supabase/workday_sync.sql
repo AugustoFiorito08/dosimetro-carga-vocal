@@ -23,6 +23,9 @@
 -- Upgrading from 0.8.0: run this whole file again (it is idempotent). 0.9.0 adds the optional
 -- fields ownVoiceRef and capture; until the function is replaced, the server rejects records
 -- that carry them (unknown field, 400) and the device keeps them queued as rejected.
+-- The per-second series (perSecond: phonated time and F0·I of each measured second, up to
+-- 86400 values each, about 0.4 MB for 8 h) is accepted the same way: run the file again
+-- before devices that record it start sending, or those records are rejected as unknown.
 
 create extension if not exists pgcrypto with schema extensions;
 
@@ -108,7 +111,7 @@ declare
     'participantId', 'schoolId', 'classroom',
     'date', 'startedAt', 'durationS', 'phonationS', 'validRatio',
     'doses', 'hMax', 'f0', 'level', 'units', 'ownVoiceRefDbfs', 'ownVoiceRef', 'capture',
-    'timeline', 'events', 'fatigue', 'assessment',
+    'timeline', 'perSecond', 'events', 'fatigue', 'assessment',
     'algorithmVersion', 'source', 'checkpoint'
   ];
   code_pattern constant text := '^[A-Za-z0-9._-]{1,32}$';
@@ -144,6 +147,17 @@ begin
     select k into bad_key from jsonb_object_keys(rec) as k where k <> all (allowed) limit 1;
     if bad_key is not null then
       raise exception 'unknown field "%" in a synced workday', bad_key using errcode = '22023';
+    end if;
+    if rec ? 'perSecond' then
+      -- Types first, in its own check: OR does not guarantee evaluation order in SQL.
+      if jsonb_typeof(rec #> '{perSecond,phonation}') is distinct from 'array'
+         or jsonb_typeof(rec #> '{perSecond,f0I}') is distinct from 'array' then
+        raise exception 'perSecond of workday % must hold the arrays phonation and f0I', coalesce(rec ->> 'id', '?') using errcode = '22023';
+      end if;
+      if jsonb_array_length(rec #> '{perSecond,phonation}') > 86400
+         or jsonb_array_length(rec #> '{perSecond,f0I}') <> jsonb_array_length(rec #> '{perSecond,phonation}') then
+        raise exception 'perSecond of workday % must be two arrays of the same length, at most 86400 s', coalesce(rec ->> 'id', '?') using errcode = '22023';
+      end if;
     end if;
     if rec #>> '{checkpoint,status}' = 'in_progress' then
       raise exception 'workday % is still in progress', rec ->> 'id' using errcode = '22023';

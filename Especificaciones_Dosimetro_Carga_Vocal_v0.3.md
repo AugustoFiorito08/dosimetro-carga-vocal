@@ -674,7 +674,7 @@ El envío de resúmenes a una base de datos que alimente un tablero analítico e
 - identificación: `schema`, `id` y, si existen, `sessionUuid` y `deviceId`;
 - códigos seudónimos: `participantId`, `schoolId`, `classroom`;
 - jornada: `date`, `startedAt`, `durationS`, `phonationS`, `validRatio`;
-- carga: `doses`, `hMax`, percentiles de `f0` y `level`, `units`, `ownVoiceRefDbfs`, `ownVoiceRef`, `capture`, `timeline` (dosis por minuto);
+- carga: `doses`, `hMax`, percentiles de `f0` y `level`, `units`, `ownVoiceRefDbfs`, `ownVoiceRef`, `capture`, `timeline` (dosis por minuto), `perSecond` (serie por segundo, ver abajo);
 - contexto: `events` (incluidas las interrupciones de captura), `fatigue` (con `recovery` si se registró), `assessment` (EVA y medidas PRE–POST, sin audio);
 - procedencia: `algorithmVersion`, `source` y, si corresponde, `checkpoint`.
 
@@ -687,7 +687,14 @@ Todo campo fuera de la lista se descarta al armar el envío y se rechaza al reci
 - La plantilla del hablante (prototipos, distancias, rango de F0 del enrolamiento).
 - Nombres ni datos de contacto.
 
-Como resguardo, el contrato rechaza cualquier arreglo de más de 100 valores numéricos fuera de la línea de tiempo por minuto, que tiene como máximo 1440 valores.
+Como resguardo, el contrato rechaza cualquier arreglo de más de 100 valores numéricos fuera de la línea de tiempo por minuto, que tiene como máximo 1440 valores, y de la serie por segundo, que tiene como máximo 86 400.
+
+**Serie por segundo (`perSecond`).** Campo optativo; las jornadas anteriores no lo tienen y siguen siendo válidas. Por cada segundo de tiempo medido guarda dos números:
+
+- `phonation[k]`: segundos fonados en ese segundo (Φ·Δt), entre 0 y 1;
+- `f0I[k]`: F0·I medio durante esa fonación (0 si no hubo), con la misma I_k del motor.
+
+`phonation[k] × f0I[k]` es la dosis sin memoria D₀ de ese segundo, así que con la serie se pueden recalcular las dosis con otros parámetros sin volver a grabar. Los segundos cuentan tiempo medido: las pausas de la sesión no agregan segundos, igual que en el motor, donde H no evoluciona mientras la sesión está en pausa. A 1 Hz la serie no puede contener audio. Una jornada de 8 h ocupa unos 0,4 MB; el servidor acepta como máximo 86 400 segundos por serie, con los dos arreglos del mismo largo.
 
 **Qué jornadas se envían.** Solo las guardadas y las recuperadas tras un cierre inesperado; estas llegan marcadas con `checkpoint.status = recovered`. Una sesión en curso (`in_progress`) nunca se envía.
 

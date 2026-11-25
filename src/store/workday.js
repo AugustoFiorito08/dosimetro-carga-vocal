@@ -1,12 +1,14 @@
 // Workday record (vd-des-workday/1): the summary of one measured session that the
 // dashboards aggregate. It never holds audio or per-frame data, only codes, doses,
-// percentiles, a per-minute dose timeline, context events, the fatigue VAS (PRE, POST and the
+// percentiles, a per-minute dose timeline, optionally a per-second series of phonated time and
+// F0·I (src/store/second-series.js), context events, the fatigue VAS (PRE, POST and the
 // recovery points recorded afterwards, src/store/recovery.js) and, when done,
 // the PRE/POST voice assessment (VAS and acoustic measures; spec §23).
 import { describe } from '../stats/descriptive.js';
 import { SCORE_DOSES } from '../ui/score-series.js';
 import { TASKS, TIMEPOINTS, retainsAudio } from './voice-assessment.js';
 import { RECOVERY_POINT_FIELDS, RECOVERY_SLOTS } from './recovery.js';
+import { validateSecondSeries } from './second-series.js';
 
 export const WORKDAY_SCHEMA = 'vd-des-workday/1';
 
@@ -83,9 +85,11 @@ function minuteTimeline(series) {
  * @param {Date} args.startedAt
  * @param {string} [args.sessionUuid] random UUID of the session, idempotency key of the sync (spec §14)
  * @param {string} [args.deviceId] random id of this installation (spec §14); never a hardware id
+ * @param {ReturnType<import('./second-series.js').createSecondSeries>} [args.seconds] per-second series of the session
  */
-export function buildWorkday({ meta, load, series, startedAt, algorithmVersion, source, sessionUuid, deviceId }) {
+export function buildWorkday({ meta, load, series, startedAt, algorithmVersion, source, sessionUuid, deviceId, seconds }) {
   const m = load.metrics;
+  const perSecond = seconds?.toJSON() ?? null;
   const workday = {
     schema: WORKDAY_SCHEMA,
     id: workdayId(startedAt, meta.participantId),
@@ -114,6 +118,7 @@ export function buildWorkday({ meta, load, series, startedAt, algorithmVersion, 
     ...(deviceId === undefined ? {} : { deviceId }),
     ...(load.ownVoiceReference ? { ownVoiceRef: { ...load.ownVoiceReference } } : {}),
     ...(load.capture ? { capture: { ...load.capture } } : {}),
+    ...(perSecond ? { perSecond } : {}),
   };
   return validateWorkday(workday);
 }
@@ -186,6 +191,7 @@ export function validateWorkday(w) {
   if (w.checkpoint !== undefined && w.checkpoint !== null) validateCheckpoint(w.checkpoint);
   if (w.ownVoiceRef !== undefined) validateOwnVoiceRef(w.ownVoiceRef);
   if (w.capture !== undefined) validateCapture(w.capture);
+  if (w.perSecond !== undefined) validateSecondSeries(w.perSecond);
   if (w.sessionUuid !== undefined && !(typeof w.sessionUuid === 'string' && SESSION_UUID_PATTERN.test(w.sessionUuid))) {
     throw new RangeError(`sessionUuid must be a UUID, got "${w.sessionUuid}"`);
   }
