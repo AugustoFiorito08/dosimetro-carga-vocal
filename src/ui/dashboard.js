@@ -362,7 +362,17 @@ async function saveWorkday() {
     return null;
   }
 }
-$('jr-save').addEventListener('click', saveWorkday);
+/**
+ * The technical view warns when the acoustic voice takes of a timepoint are missing, but lets
+ * the user go on (testing and calibration sessions); the teacher view requires them.
+ */
+function confirmMissingSamples(timepoint) {
+  if (assessment.samplesDone(timepoint)) return true;
+  const when = timepoint === 'PRE' ? 'antes de empezar' : 'al terminar';
+  // eslint-disable-next-line no-alert
+  return window.confirm(`Faltan las pruebas de voz ${when} (vocal /a/ y lectura del texto). ¿Seguir de todos modos?`);
+}
+$('jr-save').addEventListener('click', () => (confirmMissingSamples('POST') ? saveWorkday() : null));
 tabs.forEach(({ button }, i) => {
   button.addEventListener('click', () => selectTab(i));
   button.addEventListener('keydown', (event) => {
@@ -612,7 +622,7 @@ async function startSession() {
     return false;
   }
 }
-el.start.addEventListener('click', startSession);
+el.start.addEventListener('click', () => (confirmMissingSamples('PRE') ? startSession() : null));
 function pauseSession() {
   manager.session.pause();
   manager.keepAwake(false);
