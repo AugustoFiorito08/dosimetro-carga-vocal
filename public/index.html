@@ -4,14 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
-    <title>Dosímetro de Carga Vocal v0.8.0</title>
+    <title>Dosímetro de Carga Vocal v0.9.0</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <header class="topbar">
       <div class="brand">
         <h1>Dosímetro de carga vocal</h1>
-        <span class="version">v0.8.0 · experimental</span>
+        <span class="version">v0.9.0 · experimental</span>
       </div>
       <div class="session-state" aria-live="polite">
         <span class="state-dot" id="mode-dot" aria-hidden="true"></span>
@@ -87,6 +87,15 @@
             </div>
             <button id="enroll" type="button" class="btn" disabled>Enrolar voz (15 s)</button>
             <p class="hint">Habla clara y continua, con variedad de vocales: la primera mitad con tu voz normal y la segunda en voz alta, como al dar clase.</p>
+          </li>
+          <li class="step" id="step-reference">
+            <div class="step-head">
+              <span class="step-title">Referencia vocal</span>
+              <span class="step-value" id="reference-status">Sin tomar</span>
+            </div>
+            <button id="reference" type="button" class="btn" disabled>Tomar referencia (30 s)</button>
+            <p class="hint">Leé el texto en voz alta con tu voz habitual, cómoda, como en una conversación: ni fuerte ni de clase. Si terminás antes de los 30 s, volvé a empezar. Es la referencia de intensidad (I = 1) de la jornada.</p>
+            <details class="va-text"><summary>Texto a leer</summary><blockquote class="va-text-body"></blockquote></details>
           </li>
           <li class="step">
             <div class="step-head">

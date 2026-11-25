@@ -17,16 +17,32 @@ export * from './math/distance-dose.js';
 export * from './math/load-state.js';
 export * from './math/usage-metrics.js';
 
+/** What a workday keeps of the own-voice reference (spec §10.1): no RMS, only levels and durations. */
+const referenceSummary = (r) => ({
+  method: r.method ?? null,
+  textId: r.textId ?? null,
+  p10Dbfs: r.p10Dbfs ?? null,
+  p50Dbfs: r.p50Dbfs ?? r.levelDbfs ?? null,
+  p90Dbfs: r.p90Dbfs ?? null,
+  durationS: r.durationS ?? null,
+  validS: r.validS ?? null,
+});
+
 /**
  * @param {object} [options]
  * @param {object} [options.params] dose-model parameter overrides (see DEFAULT_MODEL_PARAMS)
  * @param {number} [options.referencePressure=1] P_0
  * @param {boolean} [options.calibrated=false] whether P_k is calibrated pressure (Pa)
  * @param {object} [options.distanceDose] distance-dose options (see resolveDistanceDoseOptions); needs calibration
- * @param {number | null} [options.ownVoiceReferenceDbfs] level of the normal voice the pressure is normalised to
+ * @param {number | null} [options.ownVoiceReferenceDbfs] level of the habitual voice the pressure is normalised to
  *   (uncalibrated sessions, spec §10.1); the units become 'normalized'
+ * @param {object | null} [options.ownVoiceReference] the full reference (session controller's voiceReference);
+ *   its levelDbfs takes the place of ownVoiceReferenceDbfs and its statistics are kept for the record
+ * @param {{ autoGainControl: boolean | null, noiseSuppression: boolean | null, echoCancellation: boolean | null }} [options.capture]
+ *   browser processing reported for the capture track; null = unknown
  */
-export function createVocalLoadState({ params, referencePressure = 1, calibrated = false, distanceDose, ownVoiceReferenceDbfs = null } = {}) {
+export function createVocalLoadState({ params, referencePressure = 1, calibrated = false, distanceDose, ownVoiceReferenceDbfs = null, ownVoiceReference = null, capture } = {}) {
+  if (ownVoiceReference) ownVoiceReferenceDbfs = ownVoiceReference.levelDbfs;
   assertFinitePositive('P_0', referencePressure);
   const resolved = resolveModelParams(params);
   if (distanceDose !== undefined && distanceDose !== null && calibrated !== true) {
@@ -38,6 +54,12 @@ export function createVocalLoadState({ params, referencePressure = 1, calibrated
     referencePressure,
     units: acousticLoadUnits(calibrated, calibrated !== true && ownVoiceReferenceDbfs !== null),
     ownVoiceReferenceDbfs: calibrated === true ? null : ownVoiceReferenceDbfs,
+    ownVoiceReference: calibrated === true || !ownVoiceReference ? null : referenceSummary(ownVoiceReference),
+    capture: {
+      autoGainControl: capture?.autoGainControl ?? null,
+      noiseSuppression: capture?.noiseSuppression ?? null,
+      echoCancellation: capture?.echoCancellation ?? null,
+    },
     tau: timeConstant(resolved.beta),
     halfLife: halfLife(resolved.beta),
     frameIndex: 0,

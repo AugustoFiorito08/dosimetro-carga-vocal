@@ -182,3 +182,24 @@ describe('JSON Schema of the sync record (for the backend)', () => {
     assert.deepEqual(JSON.parse(JSON.stringify(s)), s);
   });
 });
+
+describe('own-voice reference and capture settings in the sync contract', () => {
+  const reference = {
+    method: 'connected_speech', textId: 'viento-norte-sol-v1',
+    p10Dbfs: -36.4, p50Dbfs: -31.2, p90Dbfs: -28.9, durationS: 30, validS: 17.6,
+  };
+  const capture = { autoGainControl: false, noiseSuppression: null, echoCancellation: false };
+
+  it('are part of the allow-list and the JSON schema', () => {
+    assert.ok(SYNC_FIELDS.includes('ownVoiceRef'));
+    assert.ok(SYNC_FIELDS.includes('capture'));
+    assert.ok(WORKDAY_SYNC_JSON_SCHEMA.properties.ownVoiceRef);
+    assert.ok(WORKDAY_SYNC_JSON_SCHEMA.properties.capture);
+  });
+
+  it('travel unchanged in a synced record', () => {
+    const record = toSyncRecord({ ...workday(), ownVoiceRef: reference, capture });
+    assert.deepEqual(record.ownVoiceRef, reference);
+    assert.deepEqual(record.capture, capture);
+  });
+});

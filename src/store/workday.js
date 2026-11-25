@@ -24,6 +24,11 @@ const CODE = /^[A-Za-z0-9._-]{1,32}$/;
 export const SESSION_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const DEVICE_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
 
+/** Optional `ownVoiceRef` (spec §10.1): how A_0 was taken and how steady it was. */
+export const OWN_VOICE_REF_FIELDS = Object.freeze(['method', 'textId', 'p10Dbfs', 'p50Dbfs', 'p90Dbfs', 'durationS', 'validS']);
+/** Optional `capture`: browser processing of the microphone track, true / false or null when unknown. */
+export const CAPTURE_FIELDS = Object.freeze(['autoGainControl', 'noiseSuppression', 'echoCancellation']);
+
 export function validateCode(name, value) {
   if (typeof value !== 'string' || !CODE.test(value)) {
     throw new RangeError(`${name} must be a code of 1-32 letters, digits, ".", "-" or "_" (no names or spaces), got "${value}"`);
@@ -105,6 +110,8 @@ export function buildWorkday({ meta, load, series, startedAt, algorithmVersion, 
     // Optional, only when given, so records without them keep their exact shape.
     ...(sessionUuid === undefined ? {} : { sessionUuid }),
     ...(deviceId === undefined ? {} : { deviceId }),
+    ...(load.ownVoiceReference ? { ownVoiceRef: { ...load.ownVoiceReference } } : {}),
+    ...(load.capture ? { capture: { ...load.capture } } : {}),
   };
   return validateWorkday(workday);
 }
@@ -117,6 +124,24 @@ function validateAssessment(a) {
   for (const r of a.results ?? []) {
     if (!TIMEPOINTS.includes(r.timepoint) || !TASKS.includes(r.task)) throw new RangeError(`assessment result needs a PRE/POST timepoint and a VOWEL/SPEECH task`);
     if (retainsAudio(r)) throw new RangeError('assessment results must not retain audio');
+  }
+}
+
+function validateOwnVoiceRef(r) {
+  if (typeof r !== 'object' || r === null) throw new RangeError('ownVoiceRef must be an object');
+  for (const [key, value] of Object.entries(r)) {
+    if (!OWN_VOICE_REF_FIELDS.includes(key)) throw new RangeError(`unknown field ownVoiceRef.${key}`);
+    const text = key === 'method' || key === 'textId';
+    const ok = value === null || (text ? typeof value === 'string' && value.length <= 64 : Number.isFinite(value));
+    if (!ok) throw new RangeError(`ownVoiceRef.${key} must be ${text ? 'a short string' : 'a finite number'} or null, got ${value}`);
+  }
+}
+
+function validateCapture(c) {
+  if (typeof c !== 'object' || c === null) throw new RangeError('capture must be an object');
+  for (const [key, value] of Object.entries(c)) {
+    if (!CAPTURE_FIELDS.includes(key)) throw new RangeError(`unknown field capture.${key}`);
+    if (value !== null && typeof value !== 'boolean') throw new RangeError(`capture.${key} must be true, false or null, got ${value}`);
   }
 }
 
@@ -139,6 +164,8 @@ export function validateWorkday(w) {
   if (w.assessment) validateAssessment(w.assessment);
   if (!WORKDAY_SOURCES.includes(w.source)) throw new RangeError(`source must be one of ${WORKDAY_SOURCES.join(', ')}`);
   if (w.checkpoint !== undefined && w.checkpoint !== null) validateCheckpoint(w.checkpoint);
+  if (w.ownVoiceRef !== undefined) validateOwnVoiceRef(w.ownVoiceRef);
+  if (w.capture !== undefined) validateCapture(w.capture);
   if (w.sessionUuid !== undefined && !(typeof w.sessionUuid === 'string' && SESSION_UUID_PATTERN.test(w.sessionUuid))) {
     throw new RangeError(`sessionUuid must be a UUID, got "${w.sessionUuid}"`);
   }

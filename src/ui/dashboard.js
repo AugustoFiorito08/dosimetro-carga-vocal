@@ -8,6 +8,7 @@ import { toDb } from '../dsp/signal-quality.js';
 import { ALGORITHM_VERSION, csvFileName, downloadCsv, downloadCsvGzip, supportsGzip } from '../export/csv-exporter.js';
 import { detectEvents } from '../store/auto-events.js';
 import { buildWorkday, validateCode } from '../store/workday.js';
+import { STANDARD_TEXT_ID } from '../store/voice-assessment.js';
 import { createIndexedDbRepository } from '../store/workday-repository.js';
 import { createIndexedDbOutbox } from '../store/outbox.js';
 import { createSyncingRepository } from '../store/sync-service.js';
@@ -52,6 +53,7 @@ const MODE_LABELS = {
   [MODES.CALIBRATING]: 'Calibrando ambiente',
   [MODES.ACOUSTIC_CALIBRATING]: 'Calibrando nivel',
   [MODES.ENROLLING]: 'Enrolando hablante',
+  [MODES.REFERENCING]: 'Tomando referencia vocal',
   [MODES.RECORDING]: 'Grabando muestra (solo en memoria)',
   [MODES.MEASURING]: 'Midiendo',
   [MODES.PAUSED]: 'En pausa',
@@ -91,7 +93,7 @@ const el = Object.fromEntries(
   [
     'device', 'connect', 'device-info', 'cal-ref', 'cal-pre', 'cal-post', 'cal-status', 'cal-drift', 'step-acoustic',
     'dd-profile', 'dd-method', 'dd-value', 'dd-unit', 'dd-status', 'step-distance', 'kpi-distance', 'kpi-distance-note',
-    'calibrate', 'enroll', 'threshold', 'threshold-value',
+    'calibrate', 'enroll', 'reference', 'reference-status', 'step-reference', 'threshold', 'threshold-value',
     'noise-floor', 'enrolment', 'step-calibrate', 'step-enroll', 'progress', 'progress-label',
     'progress-value', 'progress-bar', 'message', 'start', 'pause', 'resume', 'finish', 'export',
     'mode-dot', 'mode-label', 'session-clock', 'status-card', 'kpi-category', 'kpi-reason', 'kpi-f0',
@@ -338,6 +340,7 @@ el.connect.addEventListener('click', async () => {
   try {
     const info = await manager.open({ deviceId: el.device.value || undefined });
     info.session.subscribe(onSessionEvent);
+    info.session.setCaptureSettings(info.trackSettings); // recorded with each session (AGC, spec §10.1)
     info.session.setSimilarityThreshold(Number(el.threshold.value));
     const s = info.trackSettings;
     microphoneLabel = info.deviceLabel || '';
@@ -410,11 +413,27 @@ el.enroll.addEventListener('click', () =>
     }
     const range = manager.session.profile?.f0Range;
     const f0 = range ? ` Tu tono: ${Math.round(range.low)}-${Math.round(range.high)} Hz.` : '';
-    const ref = manager.session.voiceReference;
-    const level = ref ? ` Tu voz normal: ${fixed(ref.levelDbfs, 1)} dBFS (referencia de intensidad).` : '';
-    return `Perfil creado${quality === null ? '' : `: reconoce el ${percent(quality)} de tu voz de prueba`}.${f0}${level} Ya podés iniciar.`;
+    const next = manager.session.acousticCalibration ? 'Ya podés iniciar.' : 'Ahora tomá la referencia vocal.';
+    return `Perfil creado${quality === null ? '' : `: reconoce el ${percent(quality)} de tu voz de prueba`}.${f0} ${next}`;
   }),
 );
+
+/** P90 - P10 of the reference reading: how steady the habitual voice was (spec §10.1). */
+const referenceSpread = (ref) => ref.p90Dbfs - ref.p10Dbfs;
+
+el.reference.addEventListener('click', async () => {
+  try {
+    say('Referencia vocal en curso: leé el texto con tu voz habitual…');
+    const ref = await manager.session.captureVoiceReference({ textId: STANDARD_TEXT_ID });
+    say(`Referencia tomada: ${fixed(ref.levelDbfs, 1)} dBFS (P10–P90: ${fixed(referenceSpread(ref), 1)} dB, ${fixed(ref.validS, 1)} s de tu voz). Ya podés iniciar.`);
+  } catch (error) {
+    say(error.code === 'reference_too_short'
+      ? 'Referencia vocal: se reconoció muy poco de tu voz. Repetila leyendo el texto de corrido durante los 30 s.'
+      : `Referencia vocal: ${error.message}`, 'error');
+  } finally {
+    progress = null;
+  }
+});
 
 /** Why D_d is (not) shown, so an empty value is never silent. */
 function distanceDoseNote(load) {
@@ -593,7 +612,8 @@ function renderControls(session) {
   el['dd-value'].disabled = !idle || !ddOn;
   el.enroll.disabled = !idle || session.noiseFloorRms === null;
   el.threshold.disabled = mode === MODES.MEASURING || mode === MODES.PAUSED;
-  el.start.disabled = !idle || session.profile === null;
+  el.reference.disabled = !idle || session.profile === null;
+  el.start.disabled = !idle || session.profile === null || (session.acousticCalibration === null && session.voiceReference === null);
   el.pause.disabled = mode !== MODES.MEASURING;
   el.resume.disabled = mode !== MODES.PAUSED;
   el.finish.disabled = mode !== MODES.MEASURING && mode !== MODES.PAUSED;
@@ -627,19 +647,24 @@ function renderControls(session) {
     const quality = session.profileQuality;
     setText(el.enrolment, !session.profile ? 'Sin perfil' : quality === null ? `${session.profile.prototypes.length} prototipos` : `Reconoce ${percent(quality)} de tu voz`);
     setAttr(el['step-enroll'], 'data-done', String(session.profile !== null));
+    const ref = session.voiceReference;
+    setText(el['reference-status'], ref ? `${fixed(ref.levelDbfs, 1)} dBFS · P10–P90 ${fixed(referenceSpread(ref), 1)} dB` : session.acousticCalibration ? 'No hace falta (calibrado)' : 'Sin tomar');
+    setAttr(el['step-reference'], 'data-done', String(ref !== null));
   }
 
   if (progress?.mode === MODES.RECORDING && session?.mode !== MODES.RECORDING) progress = null; // take finished or cancelled
   el.progress.hidden = !progress;
   if (progress) {
-    const enrolling = progress.validTime !== undefined;
+    const enrolling = progress.mode === MODES.ENROLLING;
     const done = enrolling ? progress.validTime : progress.elapsed;
     // Guided enrolment: the profile must cover the raised classroom voice too (spec §6.1).
     const enrolPhase = done < progress.target / 2 ? 'Voz normal' : 'Ahora en voz alta';
     const recordingPhase = done < progress.leadInSeconds ? 'Silencio' : 'Grabando (solo en memoria)';
     const label = enrolling
       ? enrolPhase
-      : progress.mode === MODES.RECORDING
+      : progress.mode === MODES.REFERENCING
+        ? 'Leé el texto con tu voz habitual'
+        : progress.mode === MODES.RECORDING
         ? recordingPhase
         : progress.mode === MODES.ACOUSTIC_CALIBRATING ? 'Tono de referencia' : 'Ambiente';
     setText(el['progress-label'], label);
@@ -653,7 +678,7 @@ function renderLive(session) {
   const enrolling = session?.mode === MODES.ENROLLING;
   // Outside enrolment, only frames of a measuring session are shown: the last
   // enrolment frame (classified without a profile) must not linger as "voz no atribuida".
-  const a = enrolling || load ? session.latest?.analysis : undefined;
+  const a = enrolling || load || session?.mode === MODES.REFERENCING ? session.latest?.analysis : undefined;
   const validForProfile = enrolling && a?.V === 1 && a?.Q === 1;
   const category = validForProfile ? 'fonacion_atribuida' : a?.category ?? 'none';
   setAttr(el['status-card'], 'data-category', category);

@@ -26,7 +26,7 @@ export const SYNC_FIELDS = Object.freeze([
   'schema', 'id', 'sessionUuid', 'deviceId',
   'participantId', 'schoolId', 'classroom',
   'date', 'startedAt', 'durationS', 'phonationS', 'validRatio',
-  'doses', 'hMax', 'f0', 'level', 'units', 'ownVoiceRefDbfs',
+  'doses', 'hMax', 'f0', 'level', 'units', 'ownVoiceRefDbfs', 'ownVoiceRef', 'capture',
   'timeline', 'events', 'fatigue', 'assessment',
   'algorithmVersion', 'source', 'checkpoint',
 ]);
@@ -162,6 +162,28 @@ export const WORKDAY_SYNC_JSON_SCHEMA = Object.freeze({
     level: percentiles,
     units: { enum: ['calibrated', 'normalized', 'relative'] },
     ownVoiceRefDbfs: numberOrNull,
+    ownVoiceRef: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        method: { type: ['string', 'null'], maxLength: 64 },
+        textId: { type: ['string', 'null'], maxLength: 64 },
+        p10Dbfs: numberOrNull,
+        p50Dbfs: numberOrNull,
+        p90Dbfs: numberOrNull,
+        durationS: numberOrNull,
+        validS: numberOrNull,
+      },
+    },
+    capture: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        autoGainControl: { type: ['boolean', 'null'] },
+        noiseSuppression: { type: ['boolean', 'null'] },
+        echoCancellation: { type: ['boolean', 'null'] },
+      },
+    },
     timeline: {
       type: 'object',
       properties: {

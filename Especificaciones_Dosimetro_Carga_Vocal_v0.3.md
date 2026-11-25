@@ -331,9 +331,12 @@ En el protocolo de estudio cada participante usa su propio celular, con una diad
 I_k = (P_k / P_ref)^2 = 10^((L_k − L_ref) / 10)
 ```
 
-- `L_ref` es la mediana del nivel de las tramas sonoras válidas de la **primera mitad del enrolamiento**, la de voz normal, según la guía. Se mide cada día, con la diadema ya colocada, porque el enrolamiento es obligatorio antes de iniciar. Una nueva calibración del ambiente la descarta junto con el perfil.
+- `L_ref` sale de una **referencia vocal estandarizada** (desde 0.9.0), un paso propio después del enrolamiento: 30 s de lectura del texto estándar (`viento-norte-sol-v1`, §23.1) en **voz habitual**, cómoda, no de clase; si la lectura termina antes, se vuelve a empezar. `A_ref` es la **mediana** de la RMS de las tramas aceptadas como fonación propia (`V = W = Q = 1`), y `L_ref = 20·log10(A_ref)`. Hacen falta al menos 8 s de fonación aceptada; si no, la toma se rechaza y hay que repetirla.
+- Junto con la mediana se guardan P10 y P90 del nivel de esas tramas, la duración de la toma y los segundos de fonación aceptada. `P90 − P10` indica qué tan pareja fue la voz de referencia: una dispersión grande sugiere que la mediana no representa bien la voz habitual. No hay un umbral de rechazo por dispersión: se registra para el análisis.
+- Sin calibración acústica, la referencia es obligatoria para iniciar. Se toma cada día, con la diadema ya colocada (basal diario). Un nuevo enrolamiento o una nueva calibración del ambiente la descartan.
+- Hasta 0.8.0, `L_ref` era la mediana de la primera mitad del enrolamiento (unos 7,5 s de habla libre). Las dosis normalizadas de 0.8.0 y 0.9.0 no son comparables: la versión del algoritmo las distingue.
 - La sensibilidad del celular afecta por igual a `P_k` y a `P_ref`, así que se cancela. `I = 1` es la voz normal de la persona, `I ≈ 4` equivale a +6 dB sobre ella y `I = 10` a +10 dB.
-- Las unidades se rotulan `normalized`. `L_ref` se exporta como `ownVoiceRefDbfs` en los parámetros del CSV y como `ownVoiceRefDbfs` en la jornada; el CSV de los tableros lo incluye en `own_voice_ref_dbfs`.
+- Las unidades se rotulan `normalized`. `L_ref` se exporta como `ownVoiceRefDbfs` en los parámetros del CSV y como `ownVoiceRefDbfs` en la jornada; el CSV de los tableros lo incluye en `own_voice_ref_dbfs`. La jornada lleva además `ownVoiceRef` (`method = connected_speech`, `textId`, `p10Dbfs`, `p50Dbfs`, `p90Dbfs`, `durationS`, `validS`), y los parámetros del CSV, `ownVoiceRefMethod`, `ownVoiceRefTextId`, `ownVoiceRefP10Dbfs`, `ownVoiceRefP90Dbfs` y `ownVoiceRefValidS`.
 - `H` depende solo de la fonación (§9), no de `I`, así que no cambia; las constantes de `f(H)` tampoco.
 - Con esta normalización, `D_0` se lee como **ciclos equivalentes a voz normal**: hablar todo el día a voz normal da `D_0 = D_c`. Los modelos con memoria ponderan además por la carga reciente.
 - Con calibración acústica se mantiene la presión en Pa (§10) y no se normaliza.
@@ -343,7 +346,7 @@ Interpretación y límites:
 - La dosis normalizada mide el **esfuerzo relativo a la propia voz**, no la exposición acústica absoluta. Una persona cuya voz normal ya es fuerte aparece con `I ≈ 1` hablando así. La hipótesis de trabajo es que el esfuerzo relativo explica la fatiga. Se pone a prueba comparando qué exposición predice mejor ΔF, ΔE y ΔCPPS: `D_c`, `D_0` o los modelos con memoria.
 - No permite un TLV de intensidad absoluto. Los límites transferibles en unidades físicas se derivan de `D_t` y `D_c`, que no dependen de la calibración.
 - Un error en `L_ref` multiplica toda la jornada por `10^(error/10)`: 1 dB equivale a ×1,26 y 3 dB a ×2. Por eso hay que mantener estable la colocación de la diadema y enrolar con la voz habitual, no forzada. Conviene analizar `log(D_k)` y vigilar la estabilidad de `L_ref` de cada participante entre días.
-- La normalización supone que el celular no aplica control automático de ganancia. Si lo aplica, el nivel deja de reflejar el esfuerzo (§4.2).
+- La normalización supone que el celular no aplica control automático de ganancia. Si lo aplica, el nivel deja de reflejar el esfuerzo (§4.2). La captura pide desactivar el control automático de ganancia, la supresión de ruido y la cancelación de eco. Desde 0.9.0, lo que el navegador informa para la pista (`getSettings()`) se guarda con cada sesión: en la jornada, `capture` (`autoGainControl`, `noiseSuppression`, `echoCancellation`: `true`, `false` o `null` si el navegador no lo informa), y en los parámetros del CSV, `agc`, `noiseSuppression` y `echoCancellation` (`on`, `off` o `unknown`). El navegador no expone la ganancia del micrófono, así que no se registra. Un `false` informado no garantiza que el fabricante del celular no procese la señal por debajo del navegador.
 - La dosis de distancia `D_d` necesita SPL absoluto (sonómetro) y no está disponible en este protocolo. Su motor se conserva, pero la interfaz la oculta.
 - Los tableros nunca mezclan unidades. Si hay jornadas guardadas con unidades distintas (`normalized`, `calibrated` o `relative`, por ejemplo jornadas de prueba anteriores a la 0.7.0), la barra de datos muestra un selector de unidades. Por defecto se muestran las de la jornada más reciente, y el contador indica cuántas jornadas quedaron fuera. Los registros sin unidades se toman como `relative`. El CSV de los tableros sigue exportando todas las jornadas, con su columna `units`.
 
@@ -560,6 +563,8 @@ El paso **Jornada (tableros)** guarda un resumen de cada sesión (`vd-des-workda
 
 Cada jornada puede llevar además dos campos optativos para el envío a una base analítica (§14.1): `sessionUuid`, un UUID aleatorio de la sesión, y `deviceId`, un identificador aleatorio de la instalación.
 
+Desde 0.9.0, las jornadas medidas llevan también `ownVoiceRef` (estadísticos de la referencia vocal, solo en sesiones `normalized`) y `capture` (procesamiento del navegador sobre el micrófono), descritos en §10.1. Los registros anteriores no los tienen y siguen siendo válidos.
+
 Las jornadas se exportan e importan como JSON (`vd-des-workdays/1`) para reunir las de varios equipos; al importar se omiten los identificadores ya presentes y se informan los registros inválidos.
 
 **Eventos automáticos (reglas provisionales):** fonación sostenida, cuando una ventana de 120 s tiene al menos 60 % de fonación (se recorta a sus bordes con voz); nivel elevado, cuando la voz supera durante 3 s o más la mediana de la propia jornada en 6 dB. Describen el patrón acústico; no identifican la actividad ni diagnostican fatiga.
@@ -650,7 +655,7 @@ El envío de resúmenes a una base de datos que alimente un tablero analítico e
 - identificación: `schema`, `id` y, si existen, `sessionUuid` y `deviceId`;
 - códigos seudónimos: `participantId`, `schoolId`, `classroom`;
 - jornada: `date`, `startedAt`, `durationS`, `phonationS`, `validRatio`;
-- carga: `doses`, `hMax`, percentiles de `f0` y `level`, `units`, `ownVoiceRefDbfs`, `timeline` (dosis por minuto);
+- carga: `doses`, `hMax`, percentiles de `f0` y `level`, `units`, `ownVoiceRefDbfs`, `ownVoiceRef`, `capture`, `timeline` (dosis por minuto);
 - contexto: `events` (incluidas las interrupciones de captura), `fatigue`, `assessment` (EVA y medidas PRE–POST, sin audio);
 - procedencia: `algorithmVersion`, `source` y, si corresponde, `checkpoint`.
 
@@ -748,12 +753,13 @@ El acceso a micrófono requiere un contexto seguro. `localhost` es admitido por 
 6. Calibrar la cadena con el tono de referencia si se utilizarán Pa o dB SPL (§5.1).
 7. Mantener fija la posición del micrófono.
 8. Enrolar la voz durante 10 a 20 segundos.
-9. Revisar el score y el umbral de similitud.
-10. Iniciar la medición.
-11. Controlar SNR, atribución y calidad.
-12. Finalizar la sesión.
-13. Si la sesión fue calibrada, verificar la calibración con el mismo tono de referencia, sin cambiar la ganancia ni la posición.
-14. Exportar el CSV.
+9. Sin calibración acústica: tomar la referencia vocal, 30 s de lectura del texto estándar en voz habitual (§10.1).
+10. Revisar el score y el umbral de similitud.
+11. Iniciar la medición.
+12. Controlar SNR, atribución y calidad.
+13. Finalizar la sesión.
+14. Si la sesión fue calibrada, verificar la calibración con el mismo tono de referencia, sin cambiar la ganancia ni la posición.
+15. Exportar el CSV.
 
 ## 17. Verificación de la versión 0.3
 
@@ -839,6 +845,7 @@ La salida correcta es un índice experimental de carga vocal calculada. No debe 
 | 0.6.0 | 2026-11-20 | Evaluación acústica PRE–POST (§23): /a/ sostenida y texto estándar analizados en memoria y borrados; F0, CPP/CPPS, HNR, LTAS, cepstro medio, jitter y shimmer exploratorios; EVA de esfuerzo, molestia y sequedad; registro `VOICE_ACOUSTIC_ASSESSMENT` |
 | 0.7.0 | 2026-11-22 | Intensidad normalizada a la voz propia sin calibración (§10.1): `I = 1` a la voz normal del enrolamiento, dosis comparables entre celulares, `ownVoiceRefDbfs` en la jornada y en los CSV; `D_d` oculta en la interfaz |
 | 0.8.0 | 2026-11-22 | Captura que avisa y pausa ante micrófono perdido, audio suspendido o página oculta, con wake lock; autoguardado periódico de la jornada con recuperación tras cierre inesperado (§12.2); `parameters` del CSV solo en la primera fila (§13); exportación del CSV por bloques de 10 000 filas, sin un texto único del tamaño del documento, y exportación optativa comprimida `.csv.gz` (§13); contrato de envío de resúmenes de jornada a una base analítica, con `sessionUuid` y `deviceId` optativos (§14.1) |
+| 0.9.0 | 2026-11-25 | Referencia vocal estandarizada (§10.1): paso propio de 30 s de lectura del texto estándar en voz habitual, obligatorio sin calibración; `A_ref` = mediana de la fonación aceptada, con P10 y P90; `ownVoiceRef` y `capture` (estado del control automático de ganancia, supresión de ruido y cancelación de eco) en la jornada, los parámetros del CSV y el contrato de envío (§14.1). Hay que volver a ejecutar `supabase/workday_sync.sql` antes de enviar jornadas 0.9.0 |
 
 ## 23. Evaluación acústica PRE–POST
 

@@ -19,6 +19,10 @@
 --   insert into public.upload_tokens (token_hash, school_id, label)
 --   values (encode(extensions.digest('<the token>', 'sha256'), 'hex'), 'E-25', 'equipo aula 2B');
 -- Revoking it: update public.upload_tokens set revoked_at = now() where label = 'equipo aula 2B';
+--
+-- Upgrading from 0.8.0: run this whole file again (it is idempotent). 0.9.0 adds the optional
+-- fields ownVoiceRef and capture; until the function is replaced, the server rejects records
+-- that carry them (unknown field, 400) and the device keeps them queued as rejected.
 
 create extension if not exists pgcrypto with schema extensions;
 
@@ -103,7 +107,7 @@ declare
     'schema', 'id', 'sessionUuid', 'deviceId',
     'participantId', 'schoolId', 'classroom',
     'date', 'startedAt', 'durationS', 'phonationS', 'validRatio',
-    'doses', 'hMax', 'f0', 'level', 'units', 'ownVoiceRefDbfs',
+    'doses', 'hMax', 'f0', 'level', 'units', 'ownVoiceRefDbfs', 'ownVoiceRef', 'capture',
     'timeline', 'events', 'fatigue', 'assessment',
     'algorithmVersion', 'source', 'checkpoint'
   ];

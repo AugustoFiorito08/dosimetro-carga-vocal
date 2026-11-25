@@ -1,6 +1,6 @@
 // Intensity normalised to the speaker's own normal voice (spec §10.1): without an acoustic
-// calibration, I_k = (P_k / P_ref)^2 with P_ref the normal-voice level of the enrolment,
-// so I = 1 at the normal voice and the doses do not depend on the phone's sensitivity.
+// calibration, I_k = (P_k / P_ref)^2 with P_ref the level of the standardised reference
+// reading in the habitual voice, so I = 1 at that voice and the doses do not depend on the phone's sensitivity.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -30,8 +30,11 @@ async function measured(gain, { louder = 1, seconds = 20 } = {}) {
   send(scaled(ambient, gain), framesFor(5));
   await c;
   const e = session.enroll();
-  send(scaled(voice, gain), framesFor(15)); // normal voice first half, as the guide asks
+  send(scaled(voice, gain), framesFor(15));
   await e;
+  const r = session.captureVoiceReference(); // standard text in the habitual voice
+  send(scaled(voice, gain), framesFor(30));
+  await r;
   session.start();
   send(scaled(voice, gain * louder), framesFor(seconds));
   session.stop();
@@ -41,7 +44,7 @@ async function measured(gain, { louder = 1, seconds = 20 } = {}) {
 const intensity = (load) => load.doses.none / load.conventionalDoses.cycle; // D_0 / D_c = mean I while phonating
 
 describe('own-voice normalisation of the intensity', () => {
-  it('takes the reference from the normal voice of the enrolment and labels the units', async () => {
+  it('takes the reference from the reading in the habitual voice and labels the units', async () => {
     const session = await measured(0.1);
     assert.equal(session.load.units, 'normalized');
     const expected = toDb(frameRms(scaled(voice, 0.1)));
@@ -49,7 +52,7 @@ describe('own-voice normalisation of the intensity', () => {
     assert.equal(session.load.ownVoiceReferenceDbfs, session.voiceReference.levelDbfs);
   });
 
-  it('I = 1 at the normal voice and about 4 at +6 dB', async () => {
+  it('I = 1 at the habitual voice and about 4 at +6 dB', async () => {
     const normal = await measured(0.1);
     assert.ok(normal.load.conventionalDoses.cycle > 0, 'the voice is attributed');
     assert.ok(Math.abs(intensity(normal.load) - 1) < 0.05, `I = ${intensity(normal.load)}`);
