@@ -15,6 +15,8 @@ import {
   weekStart,
   workdaysOfWeek,
 } from './aggregate.js';
+import { recoveryIndices } from '../../stats/recovery.js';
+import { recoverySchedule } from '../../store/recovery.js';
 import { SERIES, barChart, compact, heatmapTable, histogramChart, lineChart, rocChart, scatterChart, timelineChart } from './charts.js';
 
 export const DOSE_LABELS = Object.freeze({
@@ -85,6 +87,36 @@ function rateBars(w, dose) {
   return barChart({ labels, series: [{ name: `ΔD/Δt (${unitOf(dose)}/min)`, values: grouped, color: 'var(--score-rate)' }], height: 170, yLabel: `${unitOf(dose)}/min`, label: 'Tasa de dosis por minuto' });
 }
 
+const localDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const RECOVERY_STATUS = { done: 'Registrado', open: 'Ahora', upcoming: 'Pendiente', missed: 'No registrado' };
+const duration = (min) => (min < 60 ? `${fmt(min, 0)} min` : `${Math.floor(min / 60)} h${Math.round(min % 60) ? ` ${Math.round(min % 60)} min` : ''}`);
+const reachTime = (t, censored, horizon) => (Number.isFinite(t) ? duration(t) : censored ? `&gt; ${duration(horizon)}` : '—');
+const reachNote = (level, censored) => (censored ? `${level} % aún no alcanzado` : `${level} % recuperado`);
+
+/** Fatigue after the workday at the fixed times, with R(t), T50, T90 and AUC_F (hito 10). */
+function recoveryPanel(w, now) {
+  const schedule = recoverySchedule(w, now);
+  const r = recoveryIndices({ pre: w.fatigue.pre, post: w.fatigue.post, points: w.fatigue.recovery ?? [] });
+  const editable = w.source === 'live' && w.checkpoint?.status !== 'in_progress';
+  const open = editable ? schedule.find((s) => s.status === 'open') : null;
+  const last = w.fatigue.recovery?.at(-1)?.value ?? w.fatigue.post ?? 50;
+  const rOf = (p) => r.points.find((x) => x.minutes === p.minutes)?.r;
+  const rows = schedule.map((s) => `<tr><td>${esc(s.label)}</td><td>${s.targetMin === null ? `${dayLabel(localDay(s.dueAt))}, ${clock(s.dueAt.toISOString())}–${clock(s.closesAt.toISOString())}` : clock(s.dueAt.toISOString())}</td><td>${s.point ? fmt(s.point.value, 0) : '—'}</td><td>${s.point && Number.isFinite(rOf(s.point)) ? `${fmt(100 * rOf(s.point), 0)} %` : '—'}</td><td>${RECOVERY_STATUS[s.status]}</td></tr>`).join('');
+  const form = open
+    ? `<div class="recovery-form"><label>Fatiga ahora (${esc(open.label)}) <input type="range" min="0" max="100" step="1" value="${fmt(last, 0)}" data-recovery-value /> <output>${fmt(last, 0)}</output>/100</label> <button type="button" data-action="recovery-save" data-slot="${open.id}">Registrar</button></div>`
+    : `<p class="hint">${editable ? 'No hay ningún momento abierto ahora. Cada uno se abre 5 min antes de su hora y se cierra cuando se abre el siguiente; el de la mañana siguiente va de 05:00 a 12:00.' : 'La recuperación solo se registra en jornadas medidas en este equipo.'}</p>`;
+  const kpis = `<section class="kpis board-kpis">
+      ${kpi('ΔF', fmt(r.deltaF, 0), 'post − pre (0-100)')}
+      ${kpi('T₅₀', reachTime(r.t50Min, r.t50Censored, r.horizonMin), reachNote(50, r.t50Censored))}
+      ${kpi('T₉₀', reachTime(r.t90Min, r.t90Censored, r.horizonMin), reachNote(90, r.t90Censored))}
+      ${kpi('AUC_F', fmt(r.aucF, 1), r.horizonMin === null ? 'EVA·h' : `EVA·h, hasta ${duration(r.horizonMin)}`)}
+    </section>`;
+  return panel('Recuperación después de la jornada', `${form}
+    <table class="board-table"><thead><tr><th>Momento</th><th>Hora prevista</th><th>Fatiga EVA</th><th>R(t)</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>
+    ${kpis}
+    <p class="hint">R(t) es la parte del aumento de fatiga ya recuperada. Si la fatiga no subió durante la jornada, no hay nada que recuperar y T₅₀ y T₉₀ quedan vacíos.</p>`, 'span-2');
+}
+
 // ---------------------------------------------------------------- Mi jornada
 export function renderTeacher(root, workdays, state) {
   const teachers = [...new Set(workdays.map((w) => w.participantId))].sort();
@@ -116,6 +148,7 @@ export function renderTeacher(root, workdays, state) {
     <div class="board-grid">
       ${panel(`Dosis acumulada ${DOSE_LABELS[dose]}`, timelineChart({ minutes: w.timeline.minutes, values: w.timeline.doses[dose] ?? [], events: eventMarks(events), color: 'var(--score-dose)', startDate: new Date(w.startedAt), yLabel: unitOf(dose) }) + '<p class="hint">Los picos de la tasa no hacen bajar la dosis acumulada: en las pausas se mantiene.</p>')}
       ${panel('Tasa de acumulación (ΔD/Δt)', rateBars(w, dose))}
+      ${recoveryPanel(w, (state.now ?? (() => new Date()))())}
       ${panel('Eventos de la jornada', events.length ? `<table class="board-table"><thead><tr><th>Hora</th><th>Evento</th><th>Duración</th><th>Origen</th></tr></thead><tbody>${events.map((e) => `<tr><td>${clock(new Date(new Date(w.startedAt).getTime() + e.t * 1000).toISOString())}</td><td><span class="dot-swatch" style="background:${EVENT_COLORS[e.type]}"></span>${esc(EVENT_LABELS[e.type] ?? e.type)}${e.detail ? ` · ${esc(e.detail)}` : ''}</td><td>${e.durationS ? `${fmt(e.durationS, 0)} s` : '—'}</td><td>${e.source === 'docente' ? 'Docente' : 'Algoritmo'}</td></tr>`).join('')}</tbody></table>` : '<p class="board-empty">Sin eventos registrados.</p>')}
     </div>
     ${DISCLAIMER}`;
@@ -245,10 +278,12 @@ export function renderAnalytics(root, workdays, state) {
 /** CSV of the workday summaries (one row per workday, no audio, codes only). */
 export function summariesCsv(workdays) {
   const cols = ['id', 'participantId', 'schoolId', 'classroom', 'date', 'durationS', 'phonationS', 'validRatio',
-    'd_0', 'd_l', 'd_p', 'd_e', 'd_s', 'd_d', 'd_t', 'd_c', 'hMax', 'f0_p50', 'level_p50', 'units', 'fatigue_pre', 'fatigue_post', 'source', 'algorithmVersion', 'own_voice_ref_dbfs'];
+    'd_0', 'd_l', 'd_p', 'd_e', 'd_s', 'd_d', 'd_t', 'd_c', 'hMax', 'f0_p50', 'level_p50', 'units', 'fatigue_pre', 'fatigue_post', 'source', 'algorithmVersion', 'own_voice_ref_dbfs',
+    'recovery_points', 'recovery_t50_min', 'recovery_t90_min', 'recovery_auc_f', 'recovery_horizon_min'];
   const cell = (v) => (v === null || v === undefined || (typeof v === 'number' && !Number.isFinite(v)) ? '' : /[",\r\n]/.test(String(v)) ? `"${String(v).replaceAll('"', '""')}"` : String(v));
-  const rows = workdays.map((w) => [w.id, w.participantId, w.schoolId, w.classroom, w.date, w.durationS, w.phonationS, w.validRatio,
+  const rows = workdays.map((w) => [w, recoveryIndices({ pre: w.fatigue.pre, post: w.fatigue.post, points: w.fatigue.recovery ?? [] })]).map(([w, r]) => [w.id, w.participantId, w.schoolId, w.classroom, w.date, w.durationS, w.phonationS, w.validRatio,
     w.doses.none, w.doses.linear, w.doses.power, w.doses.exponential, w.doses.saturating, w.doses.distance, w.doses.time, w.doses.cycle,
-    w.hMax, w.f0?.p50, w.level?.p50, w.units, w.fatigue.pre, w.fatigue.post, w.source, w.algorithmVersion, w.ownVoiceRefDbfs].map(cell).join(','));
+    w.hMax, w.f0?.p50, w.level?.p50, w.units, w.fatigue.pre, w.fatigue.post, w.source, w.algorithmVersion, w.ownVoiceRefDbfs,
+    (w.fatigue.recovery ?? []).length, r.t50Min, r.t90Min, r.aucF, r.horizonMin].map(cell).join(','));
   return [cols.join(','), ...rows].join('\r\n') + '\r\n';
 }

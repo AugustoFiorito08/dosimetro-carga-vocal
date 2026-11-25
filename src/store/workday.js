@@ -1,10 +1,12 @@
 // Workday record (vd-des-workday/1): the summary of one measured session that the
 // dashboards aggregate. It never holds audio or per-frame data, only codes, doses,
-// percentiles, a per-minute dose timeline, context events, the fatigue VAS and, when done,
+// percentiles, a per-minute dose timeline, context events, the fatigue VAS (PRE, POST and the
+// recovery points recorded afterwards, src/store/recovery.js) and, when done,
 // the PRE/POST voice assessment (VAS and acoustic measures; spec §23).
 import { describe } from '../stats/descriptive.js';
 import { SCORE_DOSES } from '../ui/score-series.js';
 import { TASKS, TIMEPOINTS, retainsAudio } from './voice-assessment.js';
+import { RECOVERY_POINT_FIELDS, RECOVERY_SLOTS } from './recovery.js';
 
 export const WORKDAY_SCHEMA = 'vd-des-workday/1';
 
@@ -145,6 +147,23 @@ function validateCapture(c) {
   }
 }
 
+/** Optional `fatigue.recovery` (hito 10): fatigue VAS points recorded after the workday. */
+function validateRecovery(points) {
+  if (!Array.isArray(points)) throw new RangeError('fatigue.recovery must be an array');
+  const seen = new Set();
+  for (const p of points) {
+    if (typeof p !== 'object' || p === null) throw new RangeError('fatigue.recovery items must be objects');
+    const unknown = Object.keys(p).find((k) => !RECOVERY_POINT_FIELDS.includes(k));
+    if (unknown) throw new RangeError(`unknown field fatigue.recovery.${unknown}`);
+    if (!RECOVERY_SLOTS.some((s) => s.id === p.slot)) throw new RangeError(`unknown fatigue.recovery slot ${p.slot}`);
+    if (seen.has(p.slot)) throw new RangeError(`fatigue.recovery slot ${p.slot} is repeated`);
+    seen.add(p.slot);
+    if (typeof p.at !== 'string' || Number.isNaN(Date.parse(p.at))) throw new RangeError('fatigue.recovery.at must be an ISO date');
+    if (typeof p.minutes !== 'number' || !Number.isFinite(p.minutes) || p.minutes < 0) throw new RangeError('fatigue.recovery.minutes must be a number >= 0');
+    validateVas('fatigue.recovery.value', p.value ?? NaN);
+  }
+}
+
 function validateCheckpoint(c) {
   if (!CHECKPOINT_STATUSES.includes(c.status)) throw new RangeError(`checkpoint.status must be one of ${CHECKPOINT_STATUSES.join(', ')}`);
   if (typeof c.savedAt !== 'string' || Number.isNaN(Date.parse(c.savedAt))) throw new RangeError('checkpoint.savedAt must be an ISO date');
@@ -161,6 +180,7 @@ export function validateWorkday(w) {
   if (!(w.durationS >= 0) || !(w.phonationS >= 0)) throw new RangeError('durations must be >= 0');
   validateVas('fatigue.pre', w.fatigue?.pre ?? null);
   validateVas('fatigue.post', w.fatigue?.post ?? null);
+  if (w.fatigue?.recovery !== undefined) validateRecovery(w.fatigue.recovery);
   if (w.assessment) validateAssessment(w.assessment);
   if (!WORKDAY_SOURCES.includes(w.source)) throw new RangeError(`source must be one of ${WORKDAY_SOURCES.join(', ')}`);
   if (w.checkpoint !== undefined && w.checkpoint !== null) validateCheckpoint(w.checkpoint);

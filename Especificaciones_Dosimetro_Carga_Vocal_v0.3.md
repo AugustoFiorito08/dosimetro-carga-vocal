@@ -557,6 +557,7 @@ El paso **Jornada (tableros)** guarda un resumen de cada sesión (`vd-des-workda
 - dosis acumuladas al final de cada minuto (línea de tiempo);
 - eventos de contexto marcados por el docente durante la medición (llamado de atención, explicación, actividad grupal, recreo, otro) y eventos automáticos;
 - fatiga vocal percibida antes y después de la jornada, en una escala visual analógica de 0 a 100 (desenlace primario del protocolo), optativas;
+- fatiga registrada durante la recuperación, en horarios fijos después de la jornada (`fatigue.recovery`, §24), optativa;
 - versión del algoritmo y origen (`live`, `import` o `demo`).
 
 **Autoguardado.** Mientras la sesión mide o está en pausa, la jornada se guarda sola en IndexedDB cada 2 minutos y además al pausar, al finalizar, ante una interrupción de la captura y al ocultar o cerrar la página (en este último caso, sin garantía de que la escritura termine). Es el mismo registro `vd-des-workday/1` con el mismo identificador, reemplazado en su lugar, más un campo optativo `checkpoint: { status, savedAt }`: `in_progress` mientras la sesión sigue y `recovered` cuando se encuentra al abrir la aplicación tras un cierre inesperado (se conserva, aparece en los tableros y se avisa una sola vez). El guardado manual escribe el registro final sin ese campo; los registros sin `checkpoint`, incluidos todos los anteriores, son finales. Las escrituras se hacen de a una, en orden, y el guardado manual siempre es la última. Si el docente cambia el código durante la sesión, se borra el autoguardado con el código anterior. Iniciar una sesión nueva sin haber guardado la anterior pide confirmación y descarta su autoguardado. El autoguardado necesita los códigos de docente, escuela y aula; sin ellos se avisa y no se guarda. Nunca guarda audio.
@@ -571,7 +572,7 @@ Las jornadas se exportan e importan como JSON (`vd-des-workdays/1`) para reunir 
 
 ### 12.3 Mi jornada
 
-Vista del docente para una jornada elegida: fonación, tiempo observado, porcentaje de fonación, dosis de la jornada frente a su propia mediana, EVA pre y post, dosis acumulada y tasa por minuto con los eventos marcados, y la lista de eventos.
+Vista del docente para una jornada elegida: fonación, tiempo observado, porcentaje de fonación, dosis de la jornada frente a su propia mediana, EVA pre y post, dosis acumulada y tasa por minuto con los eventos marcados, la recuperación después de la jornada (registro de la EVA en cada horario fijo, R(t), T₅₀, T₉₀ y AUC_F; §24) y la lista de eventos.
 
 ### 12.4 Dirección
 
@@ -656,7 +657,7 @@ El envío de resúmenes a una base de datos que alimente un tablero analítico e
 - códigos seudónimos: `participantId`, `schoolId`, `classroom`;
 - jornada: `date`, `startedAt`, `durationS`, `phonationS`, `validRatio`;
 - carga: `doses`, `hMax`, percentiles de `f0` y `level`, `units`, `ownVoiceRefDbfs`, `ownVoiceRef`, `capture`, `timeline` (dosis por minuto);
-- contexto: `events` (incluidas las interrupciones de captura), `fatigue`, `assessment` (EVA y medidas PRE–POST, sin audio);
+- contexto: `events` (incluidas las interrupciones de captura), `fatigue` (con `recovery` si se registró), `assessment` (EVA y medidas PRE–POST, sin audio);
 - procedencia: `algorithmVersion`, `source` y, si corresponde, `checkpoint`.
 
 Todo campo fuera de la lista se descarta al armar el envío y se rechaza al recibirlo.
@@ -760,6 +761,7 @@ El acceso a micrófono requiere un contexto seguro. `localhost` es admitido por 
 13. Finalizar la sesión.
 14. Si la sesión fue calibrada, verificar la calibración con el mismo tono de referencia, sin cambiar la ganancia ni la posición.
 15. Exportar el CSV.
+16. Guardar la jornada y registrar la fatiga en «Mi jornada» a los 30 min, 1 h, 2 h y 4 h de terminar, y a la mañana siguiente (§24).
 
 ## 17. Verificación de la versión 0.3
 
@@ -919,3 +921,28 @@ Las EVA y los resultados se guardan en el navegador durante el día, para que el
   - las pausas no alteran el CPPS;
   - un jitter de σ = 1 % se mide como 0,9 % y un shimmer de σ = 5 % como 4,1 %, porque cada ciclo medido mezcla dos ciclos sintéticos.
 - El cambio ΔA = A_POST − A_PRE se estudia primero variable por variable (`D_k` → ΔF, ΔE, ΔCPPS, ΔHNR, ΔF0). Un índice combinado se construiría después, con coeficientes estimados en una cohorte de desarrollo y validados externamente, nunca con pesos arbitrarios.
+
+## 24. Recuperación después de la jornada
+
+La hipótesis del proyecto es `D_k` → fatiga relevante → recuperación insuficiente. ΔF solo describe el final de la jornada; dos jornadas con el mismo ΔF pueden recuperarse de forma muy distinta. Por eso, después de la jornada se registra la trayectoria de fatiga F(t).
+
+### 24.1 Horarios fijos
+
+La docente registra la EVA de fatiga (0-100) en «Mi jornada», sin micrófono, en cinco horarios contados desde el fin de la jornada (`startedAt + durationS`): +30 min, +1 h, +2 h, +4 h y la mañana siguiente. Los horarios son fijos para que todas las jornadas tengan puntos comparables. Cada uno se abre 5 min antes de su hora y se cierra cuando se abre el siguiente; el de +4 h se cierra a las +6 h. La mañana siguiente es la primera franja de 05:00 a 12:00 (hora local) que sigue abierta a las +8 h: la del día siguiente tras un turno de día y la del mismo día tras un turno noche que termina de madrugada. Nunca se abre antes de las +8 h y dura al menos 4 h. Un horario no registrado queda como «No registrado»: no se completa después ni se interpola. Cada horario se registra una sola vez. Los horarios se eligieron según Hunter y Titze, que observaron cerca del 90 % de recuperación a las 4–6 h y recuperación completa a las 12–18 h; son provisionales.
+
+Solo se registra en jornadas `live` y finalizadas. Cada punto se guarda tal cual en `fatigue.recovery`: `{ slot, at, minutes, value }`, con el horario (`R30`, `R60`, `R120`, `R240`, `NEXT`), la hora real, los minutos reales desde el fin de la jornada y la EVA. Volver a guardar la jornada conserva los puntos ya registrados. El registro sigue siendo `vd-des-workday/1`: el campo es optativo, los registros anteriores siguen siendo válidos y la base analítica lo recibe dentro de `fatigue`, sin cambios en el servidor.
+
+### 24.2 Índices
+
+Los índices no se guardan; se calculan a partir de los puntos, para poder recalcularlos si cambia su definición. Con t = 0 al fin de la jornada y F(0) = F_post:
+
+- ΔF = F_post − F_pre;
+- R(t) = (F_post − F(t)) / ΔF, la parte del aumento de fatiga ya recuperada;
+- T₅₀ y T₉₀: primer tiempo en que R alcanza 0,5 y 0,9, con interpolación lineal entre puntos (R = 0 en t = 0);
+- AUC_F = ∫ max(0, F(t) − F_pre) dt, de t = 0 al último punto, por trapecios, en EVA·h, junto con ese horizonte.
+
+R, T₅₀ y T₉₀ requieren ΔF > 0; si la fatiga no subió, no hay nada que recuperar y quedan vacíos. Si un nivel no se alcanzó en el último punto, el tiempo queda censurado (se muestra como «> último horario»), nunca extrapolado. AUC_F depende del horizonte: solo se comparan jornadas con el mismo último horario. El CSV de resúmenes agrega `recovery_points`, `recovery_t50_min`, `recovery_t90_min`, `recovery_auc_f` y `recovery_horizon_min`.
+
+### 24.3 Limitaciones
+
+La aplicación web no envía recordatorios; la docente tiene que abrirla en cada horario. Los puntos dependen de que lo haga: una jornada con horarios no registrados tiene índices menos precisos o censurados. Los índices son descriptivos; su relación con `D_k` se estudia en Analítica cuando haya datos suficientes.

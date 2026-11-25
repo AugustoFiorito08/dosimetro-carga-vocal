@@ -4,6 +4,7 @@
 // checks). The envelope is the JSON export one (vd-des-workdays/1), so a manual export and
 // a sync carry the same format and either can be loaded the same way.
 import { MAX_DERIVED_VALUES } from './voice-assessment.js';
+import { RECOVERY_SLOTS } from './recovery.js';
 import {
   CHECKPOINT_STATUSES,
   DEVICE_ID_PATTERN,
@@ -205,7 +206,28 @@ export const WORKDAY_SYNC_JSON_SCHEMA = Object.freeze({
         },
       },
     },
-    fatigue: { type: 'object', properties: { pre: vas, post: vas } },
+    fatigue: {
+      type: 'object',
+      properties: {
+        pre: vas,
+        post: vas,
+        recovery: {
+          type: 'array',
+          maxItems: RECOVERY_SLOTS.length,
+          items: {
+            type: 'object',
+            required: ['slot', 'at', 'minutes', 'value'],
+            properties: {
+              slot: { enum: RECOVERY_SLOTS.map((s) => s.id) },
+              at: { type: 'string', format: 'date-time' },
+              minutes: { type: 'number', minimum: 0 },
+              value: { type: 'number', minimum: 0, maximum: 100 },
+            },
+            additionalProperties: false,
+          },
+        },
+      },
+    },
     assessment: {
       type: ['object', 'null'],
       properties: {

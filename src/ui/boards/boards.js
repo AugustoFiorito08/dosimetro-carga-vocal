@@ -1,6 +1,7 @@
 // Dashboard controller: chooses the data source (stored workdays or the simulated set),
 // keeps the filter state of each tab and re-renders a tab when it is shown or changed.
 import { generateDemoWorkdays } from '../../store/demo-data.js';
+import { addRecoveryPoint } from '../../store/recovery.js';
 import { exportWorkdays, importWorkdays } from '../../store/workday-io.js';
 import { UNIT_LABELS, selectByUnits } from './aggregate.js';
 import { renderAnalytics, renderDirector, renderTeacher, summariesCsv } from './views.js';
@@ -34,6 +35,20 @@ export function createBoards({ roots, bar, repository, download, say }) {
     RENDERERS[tab](roots[tab], selection.workdays, state[tab]);
   }
 
+  async function saveRecovery(tab, root, slot) {
+    if (source !== 'real') return;
+    const value = Number(root.querySelector('[data-recovery-value]')?.value);
+    try {
+      const workday = await repository.get(state[tab].workdayId);
+      if (!workday) throw new RangeError('workday not found');
+      await repository.save(addRecoveryPoint(workday, { slot, value, at: new Date() }));
+      say(`Fatiga de recuperación registrada: ${value}/100.`);
+    } catch (error) {
+      say(`No se pudo registrar la recuperación: ${/not open|already/.test(error.message) ? 'ese momento ya no está abierto o ya tiene un registro.' : error.message}`, 'error');
+    }
+    render(tab);
+  }
+
   for (const [tab, root] of Object.entries(roots)) {
     root.addEventListener('change', (event) => {
       const key = event.target.dataset?.filter;
@@ -43,8 +58,15 @@ export function createBoards({ roots, bar, repository, download, say }) {
       else state[tab][key] = value;
       render(tab);
     });
+    root.addEventListener('input', (event) => {
+      if (event.target.dataset?.recoveryValue === undefined) return;
+      const output = event.target.parentElement.querySelector('output');
+      if (output) output.textContent = event.target.value;
+    });
     root.addEventListener('click', async (event) => {
-      if (event.target.dataset?.action !== 'export-csv') return;
+      const action = event.target.dataset?.action;
+      if (action === 'recovery-save') return saveRecovery(tab, root, event.target.dataset.slot);
+      if (action !== 'export-csv') return;
       download(summariesCsv(await workdays()), `jornadas_${source}.csv`, 'text/csv;charset=utf-8');
     });
   }

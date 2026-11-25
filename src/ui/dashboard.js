@@ -15,6 +15,7 @@ import { createSyncingRepository } from '../store/sync-service.js';
 import { createOptInRepository } from '../store/sync-settings.js';
 import { bindAutosaveTriggers, createWorkdayAutosaver, recoverCheckpoints } from '../store/workday-autosave.js';
 import { createBoards } from './boards/boards.js';
+import { preserveRecovery } from '../store/recovery.js';
 import { EVENT_LABELS } from './boards/views.js';
 import { DEFAULT_MODEL_PARAMS, meanDuration, phonationPercentage } from '../vocal-load.js';
 import { createLoadChart, zoneFor } from './load-chart.js';
@@ -210,14 +211,15 @@ function downloadText(text, fileName, type) {
 const localWorkdays = createIndexedDbRepository();
 const outbox = createIndexedDbOutbox();
 const syncPanel = createSyncPanel({ $, outbox, repository: localWorkdays, onPurged: () => boards.refresh() });
-const workdayRepository = createOptInRepository({
+// A rebuilt record of a saved workday keeps the recovery points recorded after it (hito 10).
+const workdayRepository = preserveRecovery(createOptInRepository({
   repository: localWorkdays,
   syncingRepository: createSyncingRepository(localWorkdays, outbox, {
     onEnqueued: () => syncPanel.flush(),
     onError: (error) => say(`La jornada quedó guardada en este equipo, pero no se pudo encolar su envío: ${error.message}`, 'error'),
   }),
   isEnabled: syncPanel.isEnabled,
-});
+}));
 const boards = createBoards({
   roots: { teacher: $('tab-teacher'), director: $('tab-director'), analytics: $('tab-analytics') },
   bar: $('board-bar'),
@@ -311,7 +313,7 @@ $('jr-save').addEventListener('click', async () => {
     }
     workdaySaved = true;
     setText($('jr-status'), `Guardada ${workday.id}`);
-    say(`Jornada guardada (${workday.events.length} eventos). Ya aparece en Mi jornada, Dirección y Analítica.`);
+    say(`Jornada guardada (${workday.events.length} eventos). Ya aparece en Mi jornada, Dirección y Analítica. En «Mi jornada» registrá tu fatiga a los 30 min, 1 h, 2 h y 4 h de terminar, y a la mañana siguiente.`);
   } catch (error) {
     say(`No se pudo guardar la jornada: ${error.message.includes('code of') ? 'completá docente, escuela y aula con códigos (letras, números, «.», «-» o «_», sin espacios).' : error.message}`, 'error');
   }
