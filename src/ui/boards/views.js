@@ -17,6 +17,7 @@ import {
 } from './aggregate.js';
 import { OUTCOMES, outcomeCase, outcomeValue } from '../../stats/outcomes.js';
 import { recoveryIndices } from '../../stats/recovery.js';
+import { PARAM_RANGES, RECOMPUTED_MODELS, compareModels, recomputeWorkdays } from '../../stats/dose-recompute.js';
 import { recoverySchedule } from '../../store/recovery.js';
 import { SERIES, barChart, compact, heatmapTable, histogramChart, lineChart, rocChart, scatterChart, timelineChart } from './charts.js';
 
@@ -285,12 +286,71 @@ export function renderAnalytics(root, workdays, state) {
         <tr><th scope="row">Sensibilidad</th><td>${ci(perf.sensitivity)}</td></tr><tr><th scope="row">Especificidad</th><td>${ci(perf.specificity)}</td></tr>
         <tr><th scope="row">VPP</th><td>${ci(perf.ppv)}</td></tr><tr><th scope="row">VPN</th><td>${ci(perf.npv)}</td></tr>
         <tr><th scope="row">Índice de Youden</th><td>${fmt(best.j, 2)}</td></tr></tbody></table>` : '<p class="board-empty">Hacen falta casos y controles con el desenlace elegido.</p>')}
+      ${recomputePanel(workdays, state)}
       ${panel('Niveles de acción (provisionales)', levels.c1 !== null ? `<div class="levels"><div class="levels-bar"><span class="lv lv-good" style="width:${pos(levels.c1)}"></span><span class="lv lv-warning" style="width:calc(${pos(levels.c2 ?? levels.c1)} - ${pos(levels.c1)})"></span><span class="lv lv-critical" style="flex:1"></span></div>
         <p class="levels-cuts">C1 = ${compact(levels.c1)} ${unit} (Youden) · C2 = ${levels.c2 === null ? '—' : `${compact(levels.c2)} ${unit}`} (especificidad ≥ 0,90)</p>
         <ul class="levels-list"><li><span class="zone zone-good">▼ Baja</span> ${DOSE_LABELS[dose].split(' ·')[0]} &lt; C1</li><li><span class="zone zone-warning">● Media</span> C1 ≤ dosis &lt; C2: vigilancia y medidas preventivas</li><li><span class="zone zone-critical">▲ Alta</span> dosis ≥ C2</li></ul></div>
         <p class="hint">Derivados de los datos en pantalla; deben validarse en una cohorte externa antes de usarse.</p>` : '<p class="board-empty">Sin casos y controles suficientes.</p>')}
     </div>
     ${DISCLAIMER}`;
+}
+
+/** β and α_L of the recomputation panel, inside their search ranges. */
+export function recomputeState(state) {
+  const pick = (key, name) => {
+    const r = PARAM_RANGES[name];
+    const v = Number(state[key]);
+    return Number.isFinite(v) ? Math.min(r.max, Math.max(r.min, v)) : r.initial;
+  };
+  return { beta: pick('recomputeBeta', 'beta'), alphaL: pick('recomputeAlphaL', 'alphaL') };
+}
+
+/** A β or α_L value as shown next to its slider (decimal comma, 3 decimals). */
+export const paramText = (v) => v.toFixed(3).replace('.', ',');
+
+const slider = (key, name, label, value) => {
+  const r = PARAM_RANGES[name];
+  return `<label class="recompute-param">${label} <input type="range" data-param="${key}" min="${r.min}" max="${r.max}" step="${r.step}" value="${value}"> <output data-param-out="${key}">${paramText(value)}</output> s⁻¹</label>`;
+};
+
+/** Panel of Analítica: models recomputed from the per-second series with adjustable β and α_L. */
+function recomputePanel(workdays, state) {
+  const { beta, alphaL } = recomputeState(state);
+  const withSeries = workdays.filter((w) => w.perSecond?.phonation?.length);
+  const controls = withSeries.length
+    ? `<div class="board-filters recompute-controls">${slider('recomputeBeta', 'beta', 'β', beta)}${slider('recomputeAlphaL', 'alphaL', 'α_L', alphaL)}
+      <label>Jornada <select data-param="recomputeWorkday">${withSeries.map((w) => `<option value="${esc(w.id)}"${w.id === state.recomputeWorkday ? ' selected' : ''}>${esc(w.participantId)} · ${dayLabel(w.date)} · ${clock(w.startedAt)}</option>`).join('')}</select></label></div>`
+    : '';
+  return panel('Recálculo desde la serie por segundo', `${controls}<div data-recompute-body>${recomputeBody(workdays, state)}</div>`, 'span-2');
+}
+
+/** Body of the recomputation panel, re-rendered alone while β or α_L move. */
+export function recomputeBody(workdays, state) {
+  const { beta, alphaL } = recomputeState(state);
+  const { params, entries, withoutSeries } = recomputeWorkdays(workdays, { beta, alphaL });
+  const old = withoutSeries.length
+    ? `<p class="hint">${withoutSeries.length} de ${workdays.length} jornadas no tienen serie por segundo (grabadas antes de que existiera, importadas sin ella o de demostración): no admiten recálculo y quedan fuera de esta comparación.</p>`
+    : '';
+  if (!entries.length) {
+    return `<p class="board-empty">Ninguna jornada tiene serie por segundo, así que no se puede recalcular. Las jornadas que se graben con esta versión la guardan y van a aparecer acá.</p>${old}`;
+  }
+  const outcomeKey = OUTCOMES[state.outcome] ? state.outcome : 'deltaF';
+  const outcome = OUTCOMES[outcomeKey];
+  const threshold = state[outcome.thresholdKey] ?? outcome.defaultThreshold;
+  const c = compareModels(entries, outcomeKey, threshold);
+  const name = (m) => `<span class="dot-swatch" style="background:${MODEL_COLORS[m]}"></span>${DOSE_LABELS[m].split(' ·')[0]}`;
+  const signed = (v) => (Number.isFinite(v) ? `${v > 0 ? '+' : v < 0 ? '−' : '±'}${fmt(Math.abs(v), 2)}` : '—');
+  const table = `<table class="stats"><thead><tr><th>Modelo</th><th>ρ con ${esc(outcome.short)}</th><th>AUC (IC 95 %)</th><th>AUC − AUC de D0</th></tr></thead><tbody>${RECOMPUTED_MODELS.map((m) => {
+    const r = c.models[m];
+    return `<tr><th scope="row">${name(m)}</th><td class="num">${fmt(r.rho, 2)}</td><td>${fmt(r.auc, 2)} <span class="ci">(${fmt(r.ci[0], 2)}–${fmt(r.ci[1], 2)})</span></td><td class="num">${m === 'none' ? 'referencia' : signed(r.deltaAuc)}</td></tr>`;
+  }).join('')}</tbody></table>`;
+  const selected = entries.find((e) => e.workday.id === state.recomputeWorkday) ?? entries[0];
+  const w = selected.workday;
+  const d0 = selected.doses.none;
+  const day = `<table class="stats"><thead><tr><th>Modelo</th><th>Dosis recalculada</th><th>× D0</th></tr></thead><tbody>${RECOMPUTED_MODELS.map((m) => `<tr><th scope="row">${name(m)}</th><td class="num">${compact(selected.doses[m])} u</td><td class="num">${d0 > 0 ? fmt(selected.doses[m] / d0, 2) : '—'}</td></tr>`).join('')}</tbody></table>
+    <p class="hint">${esc(w.participantId)} · ${dayLabel(w.date)}: ΔF = ${fmt(outcomeValue(w, 'deltaF'), 0)} pts · AUC_F = ${fmt(outcomeValue(w, 'aucF'), 1)} EVA·h · T₉₀ = ${fmt(outcomeValue(w, 't90'), 0)} min.</p>`;
+  return `<div class="board-grid recompute-grid"><div><h3>${entries.length} jornadas con serie · ${esc(outcome.caseText(threshold))}</h3>${table}<p class="hint">${c.cases} casos · ${c.controls} controles. AUC aparentes, sobre la misma muestra. Un modelo con memoria solo aporta si supera a D0 de forma reproducible.</p></div><div><h3>Jornada elegida</h3>${day}</div></div>
+    <p class="hint">β = ${fmt(beta, 3)} s⁻¹ (τ = ${fmt(1 / beta, 0)} s) y α_L = ${fmt(alphaL, 3)} s⁻¹. Los otros modelos usan el ancla del motor con H* = 1/β: a = ${fmt(params.a, 2)}, p = ${fmt(params.p, 1)}, H_ref = ${fmt(params.hRef, 0)} s, α_E = ${fmt(params.alphaE, 4)} s⁻¹, A = ${fmt(params.A, 2)}, K_H = ${fmt(params.kH, 0)} s. Las dosis guardadas en cada jornada no cambian; a 1 Hz las dosis con memoria difieren del cálculo por trama en torno al 1 % con β = 0,03.</p>${old}`;
 }
 
 /** CSV of the workday summaries (one row per workday, no audio, codes only). */

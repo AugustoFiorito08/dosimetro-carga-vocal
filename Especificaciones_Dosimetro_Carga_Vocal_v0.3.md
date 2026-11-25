@@ -589,7 +589,15 @@ Vista de investigación sobre todas las jornadas disponibles. El **desenlace** s
 - curvas ROC de cada modelo para el caso del desenlace elegido: **cambio de EVA ≥ umbral** (configurable, 20 puntos por defecto y provisional, porque el protocolo exige fijar la magnitud mínima relevante antes de analizar), con AUC de Mann-Whitney e intervalo de Hanley-McNeil al 95 %; **AUC_F ≥ umbral** (20 EVA·h por defecto) o **T₉₀ > umbral** (240 min por defecto), todos provisionales;
 - en el corte de Youden (empates a la mayor sensibilidad): sensibilidad, especificidad, VPP y VPN con intervalos de Wilson al 95 %;
 - niveles de acción provisionales: C1 = corte de Youden y C2 = menor corte con especificidad ≥ 0,90, con zonas baja, media y alta, siempre con ícono y texto;
+- recálculo desde la serie por segundo (ver abajo);
 - exportación de los resúmenes en CSV.
+
+**Recálculo desde la serie por segundo.** Las jornadas que tienen `perSecond` (§14.1) se recalculan en el navegador con β y α_L elegidos con dos deslizadores, dentro de los rangos de búsqueda del documento de parámetros de f(H): β entre 0,005 y 0,100 s⁻¹ (inicial 0,030) y α_L entre 0,005 y 0,100 s⁻¹ (inicial 0,050), en pasos de 0,005. Segundo a segundo se aplica H_k = H_(k−1)·e^(−β) + phonation_k y cada modelo suma phonation_k · f0I_k · f(H_k), con las mismas funciones de memoria que el motor; los demás parámetros de forma salen del ancla del motor con H* = 1/β. Mover un deslizador recalcula al instante:
+
+- por modelo, sobre las jornadas con serie: rho de Spearman con el desenlace elegido, AUC con su IC 95 % y la diferencia de AUC con D₀, que es la referencia;
+- para una jornada elegida: la dosis recalculada de cada modelo, cuántas veces D₀ es, y sus ΔF, AUC_F y T₉₀.
+
+Las dosis guardadas en las jornadas no cambian: el recálculo vive solo en pantalla. Las jornadas sin serie (anteriores a ella, importadas sin ella o simuladas) se cuentan aparte, con un aviso de que no admiten recálculo; si ninguna la tiene, el panel lo dice en lugar de mostrar la tabla. A 1 Hz no se sabe cómo se repartió la voz dentro de cada segundo: frente al cálculo por trama, las dosis con memoria difieren alrededor de 0,1 % con β = 0,005, 1 % con 0,03 y 2–3 % con 0,1; D₀ coincide salvo el redondeo con que se guarda la serie. No hay tabla de juegos de parámetros ni versionado: esos valores todavía se exploran, no se congelan.
 
 Las AUC son aparentes (misma muestra); la validación agrupada por docente, los modelos mixtos y los splines quedan para el análisis definitivo. Todas las pantallas indican "Valores provisionales · sin umbrales sanitarios validados".
 

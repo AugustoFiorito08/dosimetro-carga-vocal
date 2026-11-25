@@ -5,7 +5,7 @@ import { addRecoveryPoint } from '../../store/recovery.js';
 import { recoveryCalendar } from '../../store/recovery-reminders.js';
 import { exportWorkdays, importWorkdays } from '../../store/workday-io.js';
 import { UNIT_LABELS, selectByUnits } from './aggregate.js';
-import { renderAnalytics, renderDirector, renderTeacher, summariesCsv } from './views.js';
+import { paramText, recomputeBody, recomputeState, renderAnalytics, renderDirector, renderTeacher, summariesCsv } from './views.js';
 
 const RENDERERS = { teacher: renderTeacher, director: renderDirector, analytics: renderAnalytics };
 
@@ -21,6 +21,7 @@ export function createBoards({ roots, bar, repository, download, say, reminders 
   let demo = null;
   let visible = null;
   let units = null; // null: the units of the most recent workday
+  const shown = {}; // workdays on screen per tab, for the recomputation panel
 
   const workdays = async () => (source === 'demo' ? (demo ??= generateDemoWorkdays()) : repository.list());
 
@@ -35,6 +36,7 @@ export function createBoards({ roots, bar, repository, download, say, reminders 
     bar.querySelector('[data-count]').textContent = `${selection.workdays.length} jornadas${selection.excluded ? ` · ${selection.excluded} con otras unidades, no incluidas` : ''}`;
     bar.querySelector('[data-demo-banner]').hidden = source !== 'demo';
     if (tab === 'teacher') state.teacher.notificationPermission = globalThis.Notification?.permission ?? 'unsupported';
+    shown[tab] = selection.workdays;
     RENDERERS[tab](roots[tab], selection.workdays, state[tab]);
   }
 
@@ -65,6 +67,7 @@ export function createBoards({ roots, bar, repository, download, say, reminders 
 
   for (const [tab, root] of Object.entries(roots)) {
     root.addEventListener('change', (event) => {
+      if (event.target.dataset?.param === 'recomputeWorkday') return void recompute(event);
       const key = event.target.dataset?.filter;
       if (!key) return;
       const { min, max } = event.target;
@@ -75,7 +78,22 @@ export function createBoards({ roots, bar, repository, download, say, reminders 
       else state[tab][key] = value;
       render(tab);
     });
+    // Recomputation panel (Analítica): β, α_L and the workday re-render only its body.
+    const recompute = (event) => {
+      const key = event.target.dataset?.param;
+      if (!key) return false;
+      state[tab][key] = event.target.value;
+      const body = root.querySelector('[data-recompute-body]');
+      if (!body || !shown[tab]) return true;
+      const values = recomputeState(state[tab]);
+      for (const out of root.querySelectorAll('[data-param-out]')) {
+        out.textContent = paramText(out.dataset.paramOut === 'recomputeBeta' ? values.beta : values.alphaL);
+      }
+      body.innerHTML = recomputeBody(shown[tab], state[tab]);
+      return true;
+    };
     root.addEventListener('input', (event) => {
+      if (recompute(event)) return;
       if (event.target.dataset?.recoveryValue === undefined) return;
       const output = event.target.parentElement.querySelector('output');
       if (output) output.textContent = event.target.value;
