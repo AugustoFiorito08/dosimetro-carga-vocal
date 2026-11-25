@@ -86,9 +86,7 @@ export function createBoards({ roots, bar, repository, download, say, reminders 
       const body = root.querySelector('[data-recompute-body]');
       if (!body || !shown[tab]) return true;
       const values = recomputeState(state[tab]);
-      for (const out of root.querySelectorAll('[data-param-out]')) {
-        out.textContent = paramText(out.dataset.paramOut === 'recomputeBeta' ? values.beta : values.alphaL);
-      }
+      for (const out of root.querySelectorAll('[data-param-out]')) out.textContent = paramText(out.dataset.paramOut, values[out.dataset.paramOut]);
       body.innerHTML = recomputeBody(shown[tab], state[tab]);
       return true;
     };
@@ -100,6 +98,10 @@ export function createBoards({ roots, bar, repository, download, say, reminders 
     });
     root.addEventListener('click', async (event) => {
       const action = event.target.dataset?.action;
+      if (action === 'recompute-reset') {
+        for (const key of Object.keys(state[tab])) if (key.startsWith('recompute:')) delete state[tab][key];
+        return render(tab);
+      }
       if (action === 'recovery-save') return saveRecovery(tab, root, event.target.dataset.slot);
       if (action === 'recovery-ics') return downloadCalendar(tab);
       if (action === 'recovery-notify') {

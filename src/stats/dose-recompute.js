@@ -14,11 +14,25 @@ import { DOSE_MODELS, memoryFunctions, resolveModelParams } from '../math/dose-m
 import { rocCurve, spearman } from './inference.js';
 import { outcomeCase, outcomeValue } from './outcomes.js';
 
-/** Search ranges and initial values of the adjustable parameters (Parámetros de f(H), §16). */
+/**
+ * Search ranges and initial values of the adjustable parameters (Parámetros de f(H), §2 and
+ * §16): memory (β), linear (α_L), power (a, p), exponential (α_E) and saturating (A, K_H).
+ */
 export const PARAM_RANGES = Object.freeze({
   beta: Object.freeze({ min: 0.005, max: 0.1, step: 0.005, initial: 0.03 }),
   alphaL: Object.freeze({ min: 0.005, max: 0.1, step: 0.005, initial: 0.05 }),
+  a: Object.freeze({ min: 0.1, max: 3, step: 0.05, initial: 1 }),
+  p: Object.freeze({ min: 0.5, max: 3, step: 0.05, initial: 2 }),
+  alphaE: Object.freeze({ min: 0.002, max: 0.06, step: 0.001, initial: 0.025 }),
+  A: Object.freeze({ min: 0.25, max: 6, step: 0.05, initial: 3 }),
+  kH: Object.freeze({ min: 5, max: 120, step: 1, initial: 40 }),
 });
+
+/**
+ * H_ref of the power model, fixed and not adjusted (Parámetros de f(H), §7: a, p and H_ref
+ * compensate each other, so H_ref is fixed before estimating the rest).
+ */
+export const FIXED_H_REF = 20;
 
 /** Models recomputed from the series (the distance dose needs SPL, which the series does not keep). */
 export const RECOMPUTED_MODELS = DOSE_MODELS;
@@ -31,13 +45,18 @@ function checkRange(name, value) {
 }
 
 /**
- * Full parameter set for a recomputation: β and α_L as given (inside PARAM_RANGES when
- * present), the other shapes from the engine's anchor rules (resolveModelParams).
+ * Full parameter set for a recomputation: each adjustable parameter as given (inside
+ * PARAM_RANGES) or its initial value, and H_ref = FIXED_H_REF unless given. Every shape is
+ * explicit, so moving β changes only the memory, never the shape of f(H).
  */
-export function recomputeParams({ beta, alphaL } = {}) {
-  if (beta !== undefined) checkRange('beta', beta);
-  if (alphaL !== undefined) checkRange('alphaL', alphaL);
-  return resolveModelParams({ beta, alphaL });
+export function recomputeParams(params = {}) {
+  const chosen = {};
+  for (const [name, r] of Object.entries(PARAM_RANGES)) {
+    const value = params[name] ?? r.initial;
+    checkRange(name, value);
+    chosen[name] = value;
+  }
+  return resolveModelParams({ ...chosen, hRef: params.hRef ?? FIXED_H_REF });
 }
 
 /**

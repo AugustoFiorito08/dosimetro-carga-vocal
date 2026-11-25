@@ -3,7 +3,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { PARAM_RANGES, compareModels, recomputeDoses, recomputeWorkdays } from '../src/stats/dose-recompute.js';
+import { FIXED_H_REF, PARAM_RANGES, compareModels, recomputeDoses, recomputeParams, recomputeWorkdays } from '../src/stats/dose-recompute.js';
 import { createSecondSeries } from '../src/store/second-series.js';
 import { createVocalLoadState, stepVocalLoad } from '../src/vocal-load.js';
 
@@ -52,7 +52,8 @@ describe('dose recomputation from the per-second series', () => {
       load = stepVocalLoad(load, { dt, voiced, identityMatch: true, qualityOk: true, f0: 160 + (i % 30), pressure: 0.05 });
       series.push({ dt, phi: load.lastFrame.phi, f0: 160 + (i % 30), intensity: load.lastFrame.intensity });
     }
-    const doses = recomputeDoses(series.toJSON(), { beta: load.params.beta });
+    const { beta, alphaL, a, p, hRef, alphaE, A, kH } = load.params;
+    const doses = recomputeDoses(series.toJSON(), { beta, alphaL, a, p, hRef, alphaE, A, kH });
     for (const m of ['none', 'linear', 'power', 'exponential', 'saturating']) near(doses[m], load.doses[m], 1.5e-2); // 1 Hz resolution: about 1 % at β = 0.03
   });
 
@@ -75,10 +76,39 @@ describe('dose recomputation from the per-second series', () => {
   });
 
   it('β and α_L must be inside the search ranges', () => {
-    assert.deepEqual(PARAM_RANGES.beta, { min: 0.005, max: 0.1, step: 0.005, initial: 0.03 });
-    assert.deepEqual(PARAM_RANGES.alphaL, { min: 0.005, max: 0.1, step: 0.005, initial: 0.05 });
     assert.throws(() => recomputeDoses(continuous, { beta: 0.5, alphaL: 0.05 }), RangeError);
     assert.throws(() => recomputeDoses(continuous, { beta: 0.03, alphaL: 0 }), RangeError);
+  });
+
+  it('every shape has its own range and initial value from the parameters document; H_ref is fixed', () => {
+    assert.deepEqual(Object.fromEntries(Object.entries(PARAM_RANGES).map(([k, r]) => [k, [r.min, r.max, r.initial]])), {
+      beta: [0.005, 0.1, 0.03], alphaL: [0.005, 0.1, 0.05], a: [0.1, 3, 1], p: [0.5, 3, 2],
+      alphaE: [0.002, 0.06, 0.025], A: [0.25, 6, 3], kH: [5, 120, 40],
+    });
+    assert.equal(FIXED_H_REF, 20);
+    const p = recomputeParams({ beta: 0.01 });
+    assert.deepEqual([p.beta, p.alphaL, p.a, p.p, p.hRef, p.alphaE, p.A, p.kH], [0.01, 0.05, 1, 2, 20, 0.025, 3, 40]);
+    for (const [name, value] of [['a', 5], ['p', 0.1], ['alphaE', 0.1], ['A', 0.1], ['kH', 200]]) {
+      assert.throws(() => recomputeParams({ [name]: value }), RangeError, name);
+    }
+  });
+
+  it('moving β changes only the memory: the shape of each f(H) stays', () => {
+    const shapes = (q) => [q.alphaL, q.a, q.p, q.hRef, q.alphaE, q.A, q.kH];
+    assert.deepEqual(shapes(recomputeParams({ beta: 0.005 })), shapes(recomputeParams({ beta: 0.1 })));
+  });
+
+  it('each shape parameter moves only its own model', () => {
+    const base = recomputeDoses(continuous, params);
+    const moved = { a: 'power', p: 'power', alphaE: 'exponential', A: 'saturating', kH: 'saturating', alphaL: 'linear' };
+    for (const [name, model] of Object.entries(moved)) {
+      const r = PARAM_RANGES[name];
+      const d = recomputeDoses(continuous, { ...params, [name]: r.initial === r.max ? r.min : r.max });
+      for (const m of Object.keys(base)) {
+        if (m === model) assert.notEqual(d[m], base[m], `${name} moves ${m}`);
+        else assert.equal(d[m], base[m], `${name} leaves ${m}`);
+      }
+    }
   });
 });
 

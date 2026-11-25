@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { generateDemoWorkdays } from '../src/store/demo-data.js';
-import { recomputeBody, recomputeState, renderAnalytics, renderDirector, renderTeacher, summariesCsv } from '../src/ui/boards/views.js';
+import { RECOMPUTE_GROUPS, paramText, recomputeBody, recomputeState, renderAnalytics, renderDirector, renderTeacher, summariesCsv } from '../src/ui/boards/views.js';
 
 const days = generateDemoWorkdays({ seed: 3 });
 const render = (fn, data, state) => { const root = { innerHTML: '' }; fn(root, data, state); return root.innerHTML; };
@@ -72,17 +72,33 @@ describe('recomputation from the per-second series (Analítica)', () => {
   it('recomputes the workdays with a series, compares each model with D0 and keeps the records', () => {
     const days = demo.map((w, i) => (i < 8 ? { ...w, perSecond: series(10 + 20 * i) } : w));
     const before = structuredClone(days);
-    const html = recomputeBody(days, { recomputeBeta: '0.02', recomputeAlphaL: '0.08', outcome: 'deltaF' });
+    const html = recomputeBody(days, { 'recompute:beta': '0.02', 'recompute:alphaL': '0.08', 'recompute:kH': '60', outcome: 'deltaF' });
     assert.match(html, /8 jornadas con serie/);
     assert.match(html, /4 de 12 jornadas no tienen serie por segundo/);
     assert.match(html, /AUC − AUC de D0/);
     assert.match(html, /β = 0,02 s⁻¹/);
     assert.match(html, /α_L = 0,08 s⁻¹/);
+    assert.match(html, /K_H = 60 s/);
+    assert.match(html, /H_ref = 20 s \(fijo\)/);
     assert.deepEqual(days, before);
   });
 
-  it('keeps β and α_L inside their ranges, with the initial values by default', () => {
-    assert.deepEqual(recomputeState({}), { beta: 0.03, alphaL: 0.05 });
-    assert.deepEqual(recomputeState({ recomputeBeta: '9', recomputeAlphaL: '-1' }), { beta: 0.1, alphaL: 0.005 });
+  it('keeps every parameter inside its range, with the initial values by default', () => {
+    assert.deepEqual(recomputeState({}), { beta: 0.03, alphaL: 0.05, a: 1, p: 2, alphaE: 0.025, A: 3, kH: 40 });
+    const clamped = recomputeState({ 'recompute:beta': '9', 'recompute:alphaL': '-1', 'recompute:kH': '500', 'recompute:a': 'x' });
+    assert.deepEqual([clamped.beta, clamped.alphaL, clamped.kH, clamped.a], [0.1, 0.005, 120, 1]);
+  });
+
+  it('shows each value with its step precision and a decimal comma', () => {
+    assert.equal(paramText('beta', 0.03), '0,030');
+    assert.equal(paramText('alphaE', 0.025), '0,025');
+    assert.equal(paramText('A', 3), '3,00');
+    assert.equal(paramText('kH', 40), '40');
+  });
+
+  it('groups one slider per parameter by model family, with H_ref fixed', () => {
+    const names = RECOMPUTE_GROUPS.flatMap((g) => g.params.map(([n]) => n));
+    assert.deepEqual(names, ['beta', 'alphaL', 'a', 'p', 'alphaE', 'A', 'kH']);
+    assert.match(RECOMPUTE_GROUPS.find((g) => g.title === 'Potencial').note, /H_ref = 20 s, fijo/);
   });
 });

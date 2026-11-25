@@ -359,6 +359,11 @@ select, input[type='number'] {
 .board-filters input[type='range'] { width: 9em; }
 .recompute-param output { min-width: 3.2em; font-variant-numeric: tabular-nums; color: var(--text, inherit); }
 .recompute-grid { margin-top: 10px; }
+.recompute-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.recompute-group { border: 1px solid var(--line, rgba(127, 127, 127, 0.3)); border-radius: 8px; padding: 6px 10px 8px; margin: 0; display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.recompute-group legend { font-size: 12px; padding: 0 4px; }
+.recompute-group .recompute-param { display: flex; align-items: center; gap: 6px; }
+.recompute-group input[type='range'] { flex: 1; min-width: 0; }
 .recompute-grid h3 { font-size: 13px; margin: 0 0 6px; }
 .board-filters select, .board-filters input, .inline select {
   background: var(--panel-raised); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 8px; font: inherit;

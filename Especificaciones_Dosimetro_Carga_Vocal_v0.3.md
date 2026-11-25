@@ -592,7 +592,19 @@ Vista de investigación sobre todas las jornadas disponibles. El **desenlace** s
 - recálculo desde la serie por segundo (ver abajo);
 - exportación de los resúmenes en CSV.
 
-**Recálculo desde la serie por segundo.** Las jornadas que tienen `perSecond` (§14.1) se recalculan en el navegador con β y α_L elegidos con dos deslizadores, dentro de los rangos de búsqueda del documento de parámetros de f(H): β entre 0,005 y 0,100 s⁻¹ (inicial 0,030) y α_L entre 0,005 y 0,100 s⁻¹ (inicial 0,050), en pasos de 0,005. Segundo a segundo se aplica H_k = H_(k−1)·e^(−β) + phonation_k y cada modelo suma phonation_k · f0I_k · f(H_k), con las mismas funciones de memoria que el motor; los demás parámetros de forma salen del ancla del motor con H* = 1/β. Mover un deslizador recalcula al instante:
+**Recálculo desde la serie por segundo.** Las jornadas que tienen `perSecond` (§14.1) se recalculan en el navegador con un deslizador por parámetro, agrupados por familia y dentro de los rangos de búsqueda del documento de parámetros de f(H) (§2 y §16):
+
+| Familia | Parámetro | Rango | Inicial |
+|---|---|---|---|
+| Memoria | β | 0,005–0,100 s⁻¹ | 0,030 |
+| Lineal | α_L | 0,005–0,100 s⁻¹ | 0,050 |
+| Potencial | a | 0,10–3,00 | 1,00 |
+| Potencial | p | 0,50–3,00 | 2,00 |
+| Exponencial | α_E | 0,002–0,060 s⁻¹ | 0,025 |
+| Saturante | A | 0,25–6,00 | 3,00 |
+| Saturante | K_H | 5–120 s | 40 |
+
+H_ref queda fijo en 20 s y no se ajusta, porque a, p y H_ref se compensan entre sí (documento de parámetros, §7). Cada parámetro de forma mueve solo su modelo y β solo la memoria; ya no se usa el ancla del motor, que ataba las formas a β. Un botón vuelve a los valores iniciales. Segundo a segundo se aplica H_k = H_(k−1)·e^(−β) + phonation_k y cada modelo suma phonation_k · f0I_k · f(H_k), con las mismas funciones de memoria que el motor. Mover un deslizador recalcula al instante:
 
 - por modelo, sobre las jornadas con serie: rho de Spearman con el desenlace elegido, AUC con su IC 95 % y la diferencia de AUC con D₀, que es la referencia;
 - para una jornada elegida: la dosis recalculada de cada modelo, cuántas veces D₀ es, y sus ΔF, AUC_F y T₉₀.

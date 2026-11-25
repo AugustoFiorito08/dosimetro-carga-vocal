@@ -17,7 +17,7 @@ import {
 } from './aggregate.js';
 import { OUTCOMES, outcomeCase, outcomeValue } from '../../stats/outcomes.js';
 import { recoveryIndices } from '../../stats/recovery.js';
-import { PARAM_RANGES, RECOMPUTED_MODELS, compareModels, recomputeWorkdays } from '../../stats/dose-recompute.js';
+import { FIXED_H_REF, PARAM_RANGES, RECOMPUTED_MODELS, compareModels, recomputeWorkdays } from '../../stats/dose-recompute.js';
 import { recoverySchedule } from '../../store/recovery.js';
 import { SERIES, barChart, compact, heatmapTable, histogramChart, lineChart, rocChart, scatterChart, timelineChart } from './charts.js';
 
@@ -295,39 +295,55 @@ export function renderAnalytics(root, workdays, state) {
     ${DISCLAIMER}`;
 }
 
-/** β and α_L of the recomputation panel, inside their search ranges. */
+/** Adjustable parameters of the recomputation panel by model family, with their units. */
+export const RECOMPUTE_GROUPS = Object.freeze([
+  { title: 'Memoria', params: [['beta', 'β', 's⁻¹']] },
+  { title: 'Lineal', params: [['alphaL', 'α_L', 's⁻¹']] },
+  { title: 'Potencial', params: [['a', 'a', ''], ['p', 'p', '']], note: `H_ref = ${FIXED_H_REF} s, fijo` },
+  { title: 'Exponencial', params: [['alphaE', 'α_E', 's⁻¹']] },
+  { title: 'Saturante', params: [['A', 'A', ''], ['kH', 'K_H', 's']] },
+]);
+const paramKey = (name) => `recompute:${name}`;
+
+/** Every adjustable parameter of the recomputation panel, inside its search range. */
 export function recomputeState(state) {
-  const pick = (key, name) => {
-    const r = PARAM_RANGES[name];
-    const v = Number(state[key]);
-    return Number.isFinite(v) ? Math.min(r.max, Math.max(r.min, v)) : r.initial;
-  };
-  return { beta: pick('recomputeBeta', 'beta'), alphaL: pick('recomputeAlphaL', 'alphaL') };
+  const values = {};
+  for (const [name, r] of Object.entries(PARAM_RANGES)) {
+    const v = Number(state[paramKey(name)]);
+    values[name] = state[paramKey(name)] !== undefined && Number.isFinite(v) ? Math.min(r.max, Math.max(r.min, v)) : r.initial;
+  }
+  return values;
 }
 
-/** A β or α_L value as shown next to its slider (decimal comma, 3 decimals). */
-export const paramText = (v) => v.toFixed(3).replace('.', ',');
+/** A parameter value as shown next to its slider: decimal comma, as many decimals as its step. */
+export function paramText(name, v) {
+  const step = String(PARAM_RANGES[name].step);
+  const decimals = step.includes('.') ? step.split('.')[1].length : 0;
+  return v.toFixed(decimals).replace('.', ',');
+}
 
-const slider = (key, name, label, value) => {
+const slider = (name, label, unit, value) => {
   const r = PARAM_RANGES[name];
-  return `<label class="recompute-param">${label} <input type="range" data-param="${key}" min="${r.min}" max="${r.max}" step="${r.step}" value="${value}"> <output data-param-out="${key}">${paramText(value)}</output> s⁻¹</label>`;
+  return `<label class="recompute-param">${label} <input type="range" data-param="${paramKey(name)}" min="${r.min}" max="${r.max}" step="${r.step}" value="${value}" aria-label="${label}"> <output data-param-out="${name}">${paramText(name, value)}</output>${unit ? ` ${unit}` : ''}</label>`;
 };
 
-/** Panel of Analítica: models recomputed from the per-second series with adjustable β and α_L. */
+/** Panel of Analítica: models recomputed from the per-second series with adjustable parameters. */
 function recomputePanel(workdays, state) {
-  const { beta, alphaL } = recomputeState(state);
+  const values = recomputeState(state);
   const withSeries = workdays.filter((w) => w.perSecond?.phonation?.length);
+  const groups = RECOMPUTE_GROUPS.map((g) => `<fieldset class="recompute-group"><legend>${g.title}</legend>${g.params.map(([name, label, unit]) => slider(name, label, unit, values[name])).join('')}${g.note ? `<span class="hint">${g.note}</span>` : ''}</fieldset>`).join('');
   const controls = withSeries.length
-    ? `<div class="board-filters recompute-controls">${slider('recomputeBeta', 'beta', 'β', beta)}${slider('recomputeAlphaL', 'alphaL', 'α_L', alphaL)}
-      <label>Jornada <select data-param="recomputeWorkday">${withSeries.map((w) => `<option value="${esc(w.id)}"${w.id === state.recomputeWorkday ? ' selected' : ''}>${esc(w.participantId)} · ${dayLabel(w.date)} · ${clock(w.startedAt)}</option>`).join('')}</select></label></div>`
+    ? `<div class="recompute-controls">${groups}</div>
+      <div class="board-filters"><label>Jornada <select data-param="recomputeWorkday">${withSeries.map((w) => `<option value="${esc(w.id)}"${w.id === state.recomputeWorkday ? ' selected' : ''}>${esc(w.participantId)} · ${dayLabel(w.date)} · ${clock(w.startedAt)}</option>`).join('')}</select></label>
+      <button type="button" class="btn" data-action="recompute-reset">Volver a los valores iniciales</button></div>`
     : '';
   return panel('Recálculo desde la serie por segundo', `${controls}<div data-recompute-body>${recomputeBody(workdays, state)}</div>`, 'span-2');
 }
 
-/** Body of the recomputation panel, re-rendered alone while β or α_L move. */
+/** Body of the recomputation panel, re-rendered alone while a parameter moves. */
 export function recomputeBody(workdays, state) {
-  const { beta, alphaL } = recomputeState(state);
-  const { params, entries, withoutSeries } = recomputeWorkdays(workdays, { beta, alphaL });
+  const values = recomputeState(state);
+  const { entries, withoutSeries } = recomputeWorkdays(workdays, values);
   const old = withoutSeries.length
     ? `<p class="hint">${withoutSeries.length} de ${workdays.length} jornadas no tienen serie por segundo (grabadas antes de que existiera, importadas sin ella o de demostración): no admiten recálculo y quedan fuera de esta comparación.</p>`
     : '';
@@ -350,7 +366,7 @@ export function recomputeBody(workdays, state) {
   const day = `<table class="stats"><thead><tr><th>Modelo</th><th>Dosis recalculada</th><th>× D0</th></tr></thead><tbody>${RECOMPUTED_MODELS.map((m) => `<tr><th scope="row">${name(m)}</th><td class="num">${compact(selected.doses[m])} u</td><td class="num">${d0 > 0 ? fmt(selected.doses[m] / d0, 2) : '—'}</td></tr>`).join('')}</tbody></table>
     <p class="hint">${esc(w.participantId)} · ${dayLabel(w.date)}: ΔF = ${fmt(outcomeValue(w, 'deltaF'), 0)} pts · AUC_F = ${fmt(outcomeValue(w, 'aucF'), 1)} EVA·h · T₉₀ = ${fmt(outcomeValue(w, 't90'), 0)} min.</p>`;
   return `<div class="board-grid recompute-grid"><div><h3>${entries.length} jornadas con serie · ${esc(outcome.caseText(threshold))}</h3>${table}<p class="hint">${c.cases} casos · ${c.controls} controles. AUC aparentes, sobre la misma muestra. Un modelo con memoria solo aporta si supera a D0 de forma reproducible.</p></div><div><h3>Jornada elegida</h3>${day}</div></div>
-    <p class="hint">β = ${fmt(beta, 3)} s⁻¹ (τ = ${fmt(1 / beta, 0)} s) y α_L = ${fmt(alphaL, 3)} s⁻¹. Los otros modelos usan el ancla del motor con H* = 1/β: a = ${fmt(params.a, 2)}, p = ${fmt(params.p, 1)}, H_ref = ${fmt(params.hRef, 0)} s, α_E = ${fmt(params.alphaE, 4)} s⁻¹, A = ${fmt(params.A, 2)}, K_H = ${fmt(params.kH, 0)} s. Las dosis guardadas en cada jornada no cambian; a 1 Hz las dosis con memoria difieren del cálculo por trama en torno al 1 % con β = 0,03.</p>${old}`;
+    <p class="hint">β = ${fmt(values.beta, 3)} s⁻¹ (τ = ${fmt(1 / values.beta, 0)} s) · α_L = ${fmt(values.alphaL, 3)} s⁻¹ · a = ${fmt(values.a, 2)}, p = ${fmt(values.p, 2)}, H_ref = ${FIXED_H_REF} s (fijo) · α_E = ${fmt(values.alphaE, 3)} s⁻¹ · A = ${fmt(values.A, 2)}, K_H = ${fmt(values.kH, 0)} s. Cada parámetro de forma mueve solo su modelo, y β solo la memoria. Las dosis guardadas en cada jornada no cambian; a 1 Hz las dosis con memoria difieren del cálculo por trama en torno al 1 % con β = 0,03.</p>${old}`;
 }
 
 /** CSV of the workday summaries (one row per workday, no audio, codes only). */
