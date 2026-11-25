@@ -580,20 +580,20 @@ Vista preventiva por escuela y semana. Los docentes aparecen solo por código, y
 
 ### 12.5 Analítica
 
-Vista de investigación sobre todas las jornadas disponibles:
+Vista de investigación sobre todas las jornadas disponibles. El **desenlace** se elige entre tres: ΔF (cambio de EVA post − pre, por defecto), AUC_F de 0 a 4 h y T₉₀ (§24.4). La distribución, la tabla de jornadas, la dosis-respuesta, las ROC, el corte de Youden y los niveles de acción usan el desenlace elegido:
 
 - KPI (participantes, jornadas recibidas y válidas, escuelas, última recepción, calidad global) y participación mensual;
 - distribución de la dosis elegida y del cambio de EVA (post − pre), con n, media, mediana, DE, P25, P75 y P95 (cuantiles tipo 7);
 - últimas jornadas recibidas;
 - dosis-respuesta: regresión lineal (OLS) del cambio de EVA sobre la dosis, con banda de confianza al 95 % de la media (t de Student exacta), R² y rho de Spearman;
-- curvas ROC de cada modelo para el caso **cambio de EVA ≥ umbral** (configurable, 20 puntos por defecto y provisional, porque el protocolo exige fijar la magnitud mínima relevante antes de analizar), con AUC de Mann-Whitney e intervalo de Hanley-McNeil al 95 %;
+- curvas ROC de cada modelo para el caso del desenlace elegido: **cambio de EVA ≥ umbral** (configurable, 20 puntos por defecto y provisional, porque el protocolo exige fijar la magnitud mínima relevante antes de analizar), con AUC de Mann-Whitney e intervalo de Hanley-McNeil al 95 %; **AUC_F ≥ umbral** (20 EVA·h por defecto) o **T₉₀ > umbral** (240 min por defecto), todos provisionales;
 - en el corte de Youden (empates a la mayor sensibilidad): sensibilidad, especificidad, VPP y VPN con intervalos de Wilson al 95 %;
 - niveles de acción provisionales: C1 = corte de Youden y C2 = menor corte con especificidad ≥ 0,90, con zonas baja, media y alta, siempre con ícono y texto;
 - exportación de los resúmenes en CSV.
 
 Las AUC son aparentes (misma muestra); la validación agrupada por docente, los modelos mixtos y los splines quedan para el análisis definitivo. Todas las pantallas indican "Valores provisionales · sin umbrales sanitarios validados".
 
-**Datos simulados:** un conjunto reproducible (3 escuelas, aulas de al menos 3 docentes, 4 semanas hábiles, ausencias y EVA faltantes) permite ver los tableros sin datos reales. Siempre se muestra con el aviso "DATOS SIMULADOS" y nunca se mezcla con las jornadas guardadas. La fatiga simulada sigue la hipótesis nula del protocolo (la memoria no aporta), de modo que ningún modelo resulta favorecido por construcción: la demo no es evidencia.
+**Datos simulados:** un conjunto reproducible (3 escuelas, aulas de al menos 3 docentes, 4 semanas hábiles, ausencias y EVA faltantes) permite ver los tableros sin datos reales. Siempre se muestra con el aviso "DATOS SIMULADOS" y nunca se mezcla con las jornadas guardadas. La fatiga simulada sigue la hipótesis nula del protocolo (la memoria no aporta), de modo que ningún modelo resulta favorecido por construcción: la demo no es evidencia. La recuperación simulada sigue F(t) = F_pre + ΔF·e^(−t/τ) con ruido, con τ creciente con `D_0` y alrededor de un horario de cada ocho sin registrar; usa su propia secuencia aleatoria, así que no cambia ningún otro valor simulado.
 
 ## 13. Exportación de datos
 
@@ -943,6 +943,19 @@ Los índices no se guardan; se calculan a partir de los puntos, para poder recal
 
 R, T₅₀ y T₉₀ requieren ΔF > 0; si la fatiga no subió, no hay nada que recuperar y quedan vacíos. Si un nivel no se alcanzó en el último punto, el tiempo queda censurado (se muestra como «> último horario»), nunca extrapolado. AUC_F depende del horizonte: solo se comparan jornadas con el mismo último horario. El CSV de resúmenes agrega `recovery_points`, `recovery_t50_min`, `recovery_t90_min`, `recovery_auc_f` y `recovery_horizon_min`.
 
-### 24.3 Limitaciones
+### 24.3 Avisos
 
-La aplicación web no envía recordatorios; la docente tiene que abrirla en cada horario. Los puntos dependen de que lo haga: una jornada con horarios no registrados tiene índices menos precisos o censurados. Los índices son descriptivos; su relación con `D_k` se estudia en Analítica cuando haya datos suficientes.
+Una página web no puede despertar el celular por sí sola, así que hay dos canales, sin servidor:
+
+- **Calendario.** En el panel de recuperación, «Agregar los horarios al calendario (.ics)» descarga un archivo iCalendar (RFC 5545) con un evento por horario pendiente, desde su hora hasta su cierre, y una alarma al comienzo. El calendario del celular avisa aunque la app esté cerrada. El archivo no lleva el código de la docente: el identificador de cada evento usa el `sessionUuid` o un hash del identificador de la jornada.
+- **Notificación del navegador.** «Activar avisos del navegador» pide el permiso. Mientras la app está abierta, al llegar cada horario se muestra una notificación (si hay permiso) y siempre un mensaje dentro de la app. Si la página estuvo dormida, al volver a mostrarse avisa los horarios que llegaron y siguen abiertos. Cada horario se avisa una sola vez y nunca uno ya registrado. Algunos navegadores móviles solo notifican mediante un *service worker*; en ellos queda el mensaje dentro de la app y el calendario.
+
+### 24.4 Desenlaces en Analítica
+
+- **ΔF**: F_post − F_pre; caso si ΔF ≥ umbral.
+- **AUC_F (0 a 4 h)**: el área de §24.2 sobre un horizonte fijo de 240 min, comparable entre jornadas. Necesita un registro desde los 235 min (el de +4 h se abre 5 min antes), cuyo valor se mantiene hasta los 240 min; un punto posterior a los 240 min se interpola. Caso si AUC_F ≥ umbral.
+- **T₉₀**: un T₉₀ censurado no es un valor y queda fuera de la distribución y de la regresión. Para la ROC, una jornada es caso si no recuperó el 90 % en el umbral: con T₉₀ observado, si T₉₀ > umbral; con T₉₀ censurado, solo si se siguió al menos hasta el umbral (si no, queda sin clasificar). Si la fatiga no subió, no hay nada que recuperar y es control.
+
+### 24.5 Limitaciones
+
+Los puntos dependen de que la docente registre en cada horario: una jornada con horarios no registrados tiene índices menos precisos o censurados. Los índices son descriptivos y los umbrales de caso son provisionales.

@@ -2,6 +2,7 @@
 // keeps the filter state of each tab and re-renders a tab when it is shown or changed.
 import { generateDemoWorkdays } from '../../store/demo-data.js';
 import { addRecoveryPoint } from '../../store/recovery.js';
+import { recoveryCalendar } from '../../store/recovery-reminders.js';
 import { exportWorkdays, importWorkdays } from '../../store/workday-io.js';
 import { UNIT_LABELS, selectByUnits } from './aggregate.js';
 import { renderAnalytics, renderDirector, renderTeacher, summariesCsv } from './views.js';
@@ -10,9 +11,10 @@ const RENDERERS = { teacher: renderTeacher, director: renderDirector, analytics:
 
 /**
  * @param {{ roots: Record<'teacher' | 'director' | 'analytics', HTMLElement>, bar: HTMLElement,
- *   repository: object, download: (text: string, name: string, type: string) => void, say: (text: string, tone?: string) => void }} deps
+ *   repository: object, download: (text: string, name: string, type: string) => void, say: (text: string, tone?: string) => void,
+ *   reminders?: { enable: () => Promise<string>, refresh: () => void } }} deps
  */
-export function createBoards({ roots, bar, repository, download, say }) {
+export function createBoards({ roots, bar, repository, download, say, reminders }) {
   const shared = { dose: 'none', caseThreshold: 20 };
   const state = { teacher: Object.create(shared), director: Object.create(shared), analytics: shared };
   let source = 'real';
@@ -32,6 +34,7 @@ export function createBoards({ roots, bar, repository, download, say }) {
     bar.querySelector('[data-units-wrap]').hidden = selection.available.length < 2;
     bar.querySelector('[data-count]').textContent = `${selection.workdays.length} jornadas${selection.excluded ? ` · ${selection.excluded} con otras unidades, no incluidas` : ''}`;
     bar.querySelector('[data-demo-banner]').hidden = source !== 'demo';
+    if (tab === 'teacher') state.teacher.notificationPermission = globalThis.Notification?.permission ?? 'unsupported';
     RENDERERS[tab](roots[tab], selection.workdays, state[tab]);
   }
 
@@ -43,17 +46,31 @@ export function createBoards({ roots, bar, repository, download, say }) {
       if (!workday) throw new RangeError('workday not found');
       await repository.save(addRecoveryPoint(workday, { slot, value, at: new Date() }));
       say(`Fatiga de recuperación registrada: ${value}/100.`);
+      reminders?.refresh();
     } catch (error) {
       say(`No se pudo registrar la recuperación: ${/not open|already/.test(error.message) ? 'ese momento ya no está abierto o ya tiene un registro.' : error.message}`, 'error');
     }
     render(tab);
   }
 
+  async function downloadCalendar(tab) {
+    try {
+      const workday = await repository.get(state[tab].workdayId);
+      download(recoveryCalendar(workday), 'recuperacion-vocal.ics', 'text/calendar;charset=utf-8');
+      say('Abrí el archivo descargado para agregar los horarios a tu calendario.');
+    } catch (error) {
+      say(`No se pudo crear el calendario: ${error.message.includes('no pending') ? 'ya no quedan horarios pendientes.' : error.message}`, 'error');
+    }
+  }
+
   for (const [tab, root] of Object.entries(roots)) {
     root.addEventListener('change', (event) => {
       const key = event.target.dataset?.filter;
       if (!key) return;
-      const value = event.target.type === 'number' ? Math.max(1, Math.min(100, Number(event.target.value) || 20)) : event.target.value;
+      const { min, max } = event.target;
+      const value = event.target.type === 'number'
+        ? Math.max(Number(min) || 1, Math.min(Number(max) || 100, Number(event.target.value) || Number(event.target.defaultValue) || 20))
+        : event.target.value;
       if (key === 'dose' || key === 'caseThreshold') shared[key] = value;
       else state[tab][key] = value;
       render(tab);
@@ -66,6 +83,12 @@ export function createBoards({ roots, bar, repository, download, say }) {
     root.addEventListener('click', async (event) => {
       const action = event.target.dataset?.action;
       if (action === 'recovery-save') return saveRecovery(tab, root, event.target.dataset.slot);
+      if (action === 'recovery-ics') return downloadCalendar(tab);
+      if (action === 'recovery-notify') {
+        const permission = await reminders?.enable();
+        if (permission === 'denied') say('El navegador bloqueó los avisos. Agregá los horarios al calendario.', 'error');
+        return render(tab);
+      }
       if (action !== 'export-csv') return;
       download(summariesCsv(await workdays()), `jornadas_${source}.csv`, 'text/csv;charset=utf-8');
     });
@@ -117,6 +140,7 @@ export function createBoards({ roots, bar, repository, download, say }) {
     },
     async save(workday) {
       await repository.save(workday);
+      reminders?.refresh();
       if (source === 'real') render();
     },
     refresh: () => render(),

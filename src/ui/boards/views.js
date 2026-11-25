@@ -15,6 +15,7 @@ import {
   weekStart,
   workdaysOfWeek,
 } from './aggregate.js';
+import { OUTCOMES, outcomeCase, outcomeValue } from '../../stats/outcomes.js';
 import { recoveryIndices } from '../../stats/recovery.js';
 import { recoverySchedule } from '../../store/recovery.js';
 import { SERIES, barChart, compact, heatmapTable, histogramChart, lineChart, rocChart, scatterChart, timelineChart } from './charts.js';
@@ -55,7 +56,6 @@ const statsTable = (d, unit) => `<table class="stats"><tbody>${[
   ['n', fmt(d.n, 0)], ['Media', compact(d.mean)], ['Mediana', compact(d.p50)], ['DE', compact(d.sd)],
   ['P25', compact(d.p25)], ['P75', compact(d.p75)], ['P95', compact(d.p95)],
 ].map(([k, v]) => `<tr><th scope="row">${k}</th><td>${v}${k === 'n' ? '' : ` ${unit}`}</td></tr>`).join('')}</tbody></table>`;
-const change = (w) => (w.fatigue?.pre == null || w.fatigue?.post == null ? NaN : w.fatigue.post - w.fatigue.pre);
 const doseOptions = (selected, workdays) => Object.entries(DOSE_LABELS)
   .filter(([k]) => k !== 'distance' || workdays.some((w) => Number.isFinite(w.doses.distance)))
   .map(([k, v]) => `<option value="${k}"${k === selected ? ' selected' : ''}>${v}</option>`).join('');
@@ -94,7 +94,7 @@ const reachTime = (t, censored, horizon) => (Number.isFinite(t) ? duration(t) : 
 const reachNote = (level, censored) => (censored ? `${level} % aún no alcanzado` : `${level} % recuperado`);
 
 /** Fatigue after the workday at the fixed times, with R(t), T50, T90 and AUC_F (hito 10). */
-function recoveryPanel(w, now) {
+function recoveryPanel(w, now, notificationPermission = 'unsupported') {
   const schedule = recoverySchedule(w, now);
   const r = recoveryIndices({ pre: w.fatigue.pre, post: w.fatigue.post, points: w.fatigue.recovery ?? [] });
   const editable = w.source === 'live' && w.checkpoint?.status !== 'in_progress';
@@ -105,6 +105,16 @@ function recoveryPanel(w, now) {
   const form = open
     ? `<div class="recovery-form"><label>Fatiga ahora (${esc(open.label)}) <input type="range" min="0" max="100" step="1" value="${fmt(last, 0)}" data-recovery-value /> <output>${fmt(last, 0)}</output>/100</label> <button type="button" data-action="recovery-save" data-slot="${open.id}">Registrar</button></div>`
     : `<p class="hint">${editable ? 'No hay ningún momento abierto ahora. Cada uno se abre 5 min antes de su hora y se cierra cuando se abre el siguiente; el de la mañana siguiente va de 05:00 a 12:00.' : 'La recuperación solo se registra en jornadas medidas en este equipo.'}</p>`;
+  const pending = editable && schedule.some((s) => s.status === 'upcoming' || s.status === 'open');
+  const notifyState = {
+    default: '<button type="button" class="btn" data-action="recovery-notify">Activar avisos del navegador</button>',
+    granted: '<span class="hint">Avisos del navegador activados: llegan solo con la app abierta.</span>',
+    denied: '<span class="hint">El navegador bloqueó los avisos: usá el calendario.</span>',
+  }[notificationPermission] ?? '';
+  const reminders = pending
+    ? `<div class="recovery-form"><button type="button" class="btn" data-action="recovery-ics">Agregar los horarios al calendario (.ics)</button>${notifyState}</div>
+    <p class="hint">El calendario del celular avisa en cada horario aunque la app esté cerrada.</p>`
+    : '';
   const kpis = `<section class="kpis board-kpis">
       ${kpi('ΔF', fmt(r.deltaF, 0), 'post − pre (0-100)')}
       ${kpi('T₅₀', reachTime(r.t50Min, r.t50Censored, r.horizonMin), reachNote(50, r.t50Censored))}
@@ -112,6 +122,7 @@ function recoveryPanel(w, now) {
       ${kpi('AUC_F', fmt(r.aucF, 1), r.horizonMin === null ? 'EVA·h' : `EVA·h, hasta ${duration(r.horizonMin)}`)}
     </section>`;
   return panel('Recuperación después de la jornada', `${form}
+    ${reminders}
     <table class="board-table"><thead><tr><th>Momento</th><th>Hora prevista</th><th>Fatiga EVA</th><th>R(t)</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>
     ${kpis}
     <p class="hint">R(t) es la parte del aumento de fatiga ya recuperada. Si la fatiga no subió durante la jornada, no hay nada que recuperar y T₅₀ y T₉₀ quedan vacíos.</p>`, 'span-2');
@@ -148,7 +159,7 @@ export function renderTeacher(root, workdays, state) {
     <div class="board-grid">
       ${panel(`Dosis acumulada ${DOSE_LABELS[dose]}`, timelineChart({ minutes: w.timeline.minutes, values: w.timeline.doses[dose] ?? [], events: eventMarks(events), color: 'var(--score-dose)', startDate: new Date(w.startedAt), yLabel: unitOf(dose) }) + '<p class="hint">Los picos de la tasa no hacen bajar la dosis acumulada: en las pausas se mantiene.</p>')}
       ${panel('Tasa de acumulación (ΔD/Δt)', rateBars(w, dose))}
-      ${recoveryPanel(w, (state.now ?? (() => new Date()))())}
+      ${recoveryPanel(w, (state.now ?? (() => new Date()))(), state.notificationPermission)}
       ${panel('Eventos de la jornada', events.length ? `<table class="board-table"><thead><tr><th>Hora</th><th>Evento</th><th>Duración</th><th>Origen</th></tr></thead><tbody>${events.map((e) => `<tr><td>${clock(new Date(new Date(w.startedAt).getTime() + e.t * 1000).toISOString())}</td><td><span class="dot-swatch" style="background:${EVENT_COLORS[e.type]}"></span>${esc(EVENT_LABELS[e.type] ?? e.type)}${e.detail ? ` · ${esc(e.detail)}` : ''}</td><td>${e.durationS ? `${fmt(e.durationS, 0)} s` : '—'}</td><td>${e.source === 'docente' ? 'Docente' : 'Algoritmo'}</td></tr>`).join('')}</tbody></table>` : '<p class="board-empty">Sin eventos registrados.</p>')}
     </div>
     ${DISCLAIMER}`;
@@ -222,12 +233,18 @@ export function renderAnalytics(root, workdays, state) {
   const k = kpis(workdays);
   const months = monthlyCounts(workdays).slice(-12);
   const doses = workdays.map((w) => w.doses[dose]);
-  const changes = workdays.map(change);
+  const outcomeKey = OUTCOMES[state.outcome] ? state.outcome : 'deltaF';
+  const outcome = OUTCOMES[outcomeKey];
+  const threshold = state[outcome.thresholdKey] ?? outcome.defaultThreshold;
+  const changes = workdays.map((w) => outcomeValue(w, outcomeKey));
   const dDose = describe(doses);
   const dChange = describe(changes);
   const hDose = histogram(doses, { bins: 24 });
   const hChange = histogram(changes, { bins: 20 });
-  const labels = caseLabels(workdays, state.caseThreshold);
+  const labels = workdays.map((w) => outcomeCase(w, outcomeKey, threshold));
+  const withRecovery = workdays.filter((w) => w.fatigue?.recovery?.length).length;
+  const censored = outcomeKey === 't90' ? workdays.filter((w) => w.fatigue?.recovery?.length && outcomeCase(w, 't90', 0) === 1 && Number.isNaN(outcomeValue(w, 't90'))).length : 0;
+  const outcomeNote = outcomeKey === 'deltaF' ? '' : ` ${withRecovery} de ${workdays.length} jornadas tienen datos de recuperación.${outcomeKey === 'aucF' ? ' AUC_F se calcula de 0 a 4 h y necesita el registro de +4 h.' : ` ${censored} con T₉₀ censurado (90 % no alcanzado en el seguimiento) quedan fuera de la distribución y de la regresión; en la ROC cuentan como caso si se siguieron hasta el umbral.`}`;
   const fit = linearRegression(doses, changes);
   const rho = spearman(doses, changes);
   const models = Object.keys(DOSE_LABELS).filter((m) => m !== 'distance' || workdays.some((w) => Number.isFinite(w.doses.distance)));
@@ -244,7 +261,8 @@ export function renderAnalytics(root, workdays, state) {
   root.innerHTML = `
     <div class="board-filters">
       <label>Dosis <select data-filter="dose">${doseOptions(dose, workdays)}</select></label>
-      <label>Caso: aumento de EVA ≥ <input data-filter="caseThreshold" type="number" min="1" max="100" step="1" value="${state.caseThreshold}"> puntos</label>
+      <label>Desenlace <select data-filter="outcome">${Object.entries(OUTCOMES).map(([k, o]) => `<option value="${k}"${k === outcomeKey ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select></label>
+      <label>${esc(outcome.thresholdText)} <input data-filter="${outcome.thresholdKey}" type="number" min="${outcome.min}" max="${outcome.max}" step="1" value="${threshold}"> ${esc(outcome.thresholdUnit)}</label>
       <button type="button" class="btn" data-action="export-csv">Exportar resúmenes (CSV)</button>
     </div>
     <section class="kpis board-kpis">
@@ -257,16 +275,16 @@ export function renderAnalytics(root, workdays, state) {
     <div class="board-grid">
       ${panel('Evolución de la participación', barChart({ labels: months.map((m) => new Date(`${m.month}-15T12:00:00`).toLocaleDateString('es-AR', { month: 'short' })), series: [{ name: 'Recibidas', values: months.map((m) => m.received), color: SERIES[0] }, { name: 'Válidas', values: months.map((m) => m.valid), color: SERIES[2] }], yLabel: 'Jornadas', label: 'Jornadas recibidas y válidas por mes' }) + '<p class="legend-inline"><span class="dot-swatch" style="background:var(--score-f0)"></span>Recibidas <span class="dot-swatch" style="background:var(--score-h)"></span>Válidas</p>')}
       ${panel(`Distribución de ${DOSE_LABELS[dose]}`, `<div class="with-stats">${histogramChart({ ...hDose, color: MODEL_COLORS[dose], xLabel: `${DOSE_LABELS[dose]} (${unit})`, marker: { x: dDose.p95, label: `P95 = ${compact(dDose.p95)}` } })}${statsTable(dDose, unit)}</div>`)}
-      ${panel('Distribución del cambio de fatiga (EVA post − pre)', `<div class="with-stats">${histogramChart({ ...hChange, color: SERIES[1], xLabel: 'Cambio de EVA (puntos)', marker: { x: state.caseThreshold, label: `caso ≥ ${state.caseThreshold}` } })}${statsTable(dChange, 'pts')}</div>`)}
-      ${panel('Últimas jornadas recibidas', `<div class="table-scroll"><table class="board-table"><thead><tr><th>Sesión</th><th>Participante</th><th>Fecha</th><th>Escuela</th><th>Duración</th><th>${dose === 'distance' ? 'Dd' : 'Dosis'}</th><th>ΔEVA</th><th>Calidad</th><th>Estado</th></tr></thead><tbody>${latest.map((w) => `<tr><td>${esc(w.id)}</td><td>${esc(w.participantId)}</td><td>${dayLabel(w.date)}</td><td>${esc(w.schoolId)}</td><td>${minutes(w.durationS)}</td><td class="num">${compact(w.doses[dose])}</td><td class="num">${fmt(change(w), 0)}</td><td class="num">${fmt(100 * w.validRatio, 1)} %</td><td>${w.validRatio >= 0.9 ? '<span class="zone zone-good">✓ Válida</span>' : '<span class="zone zone-warning">! Revisar</span>'}</td></tr>`).join('')}</tbody></table></div>`, 'span-2')}
-      ${panel('Curva dosis-respuesta (ΔEVA vs dosis)', scatterChart({ points: workdays.map((w) => [w.doses[dose], change(w)]).filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b)), fit, color: MODEL_COLORS[dose], xLabel: `${DOSE_LABELS[dose]} (${unit})`, yLabel: 'ΔEVA' }) + `<p class="hint">Regresión lineal (OLS) con banda de confianza al 95 % de la media · n = ${fit.n} · R² = ${fmt(fit.r2, 2)} · Spearman ρ = ${fmt(rho, 2)}. Modelos mixtos y splines quedan para el análisis definitivo.</p>`)}
-      ${panel(`Curvas ROC para fatiga relevante (caso: ΔEVA ≥ ${state.caseThreshold})`, `<div class="with-stats">${rocChart({ curves: models.map((m) => ({ name: DOSE_LABELS[m], points: rocs[m].points, color: MODEL_COLORS[m] })) })}<table class="stats"><thead><tr><th>Modelo</th><th>AUC (IC 95 %)</th></tr></thead><tbody>${models.map((m) => `<tr><th scope="row"><span class="dot-swatch" style="background:${MODEL_COLORS[m]}"></span>${DOSE_LABELS[m].split(' ·')[0]}</th><td>${fmt(rocs[m].auc, 2)} <span class="ci">(${fmt(rocs[m].ci[0], 2)}–${fmt(rocs[m].ci[1], 2)})</span></td></tr>`).join('')}</tbody></table></div><p class="hint">${cases} casos · ${controls} controles. Validación agrupada por docente pendiente: estas AUC son aparentes, sobre la misma muestra.</p>`)}
+      ${panel(`Distribución de ${outcome.label}`, `<div class="with-stats">${histogramChart({ ...hChange, color: SERIES[1], xLabel: `${outcome.short} (${outcome.unit})`, marker: { x: threshold, label: `caso: ${outcome.caseText(threshold)}` } })}${statsTable(dChange, outcome.unit)}</div>${outcomeNote ? `<p class="hint">${esc(outcomeNote.trim())}</p>` : ''}`)}
+      ${panel('Últimas jornadas recibidas', `<div class="table-scroll"><table class="board-table"><thead><tr><th>Sesión</th><th>Participante</th><th>Fecha</th><th>Escuela</th><th>Duración</th><th>${dose === 'distance' ? 'Dd' : 'Dosis'}</th><th>${esc(outcome.short)}</th><th>Calidad</th><th>Estado</th></tr></thead><tbody>${latest.map((w) => `<tr><td>${esc(w.id)}</td><td>${esc(w.participantId)}</td><td>${dayLabel(w.date)}</td><td>${esc(w.schoolId)}</td><td>${minutes(w.durationS)}</td><td class="num">${compact(w.doses[dose])}</td><td class="num">${fmt(outcomeValue(w, outcomeKey), 0)}</td><td class="num">${fmt(100 * w.validRatio, 1)} %</td><td>${w.validRatio >= 0.9 ? '<span class="zone zone-good">✓ Válida</span>' : '<span class="zone zone-warning">! Revisar</span>'}</td></tr>`).join('')}</tbody></table></div>`, 'span-2')}
+      ${panel(`Curva dosis-respuesta (${outcome.short} vs dosis)`, scatterChart({ points: workdays.map((w) => [w.doses[dose], outcomeValue(w, outcomeKey)]).filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b)), fit, color: MODEL_COLORS[dose], xLabel: `${DOSE_LABELS[dose]} (${unit})`, yLabel: outcome.short }) + `<p class="hint">Regresión lineal (OLS) con banda de confianza al 95 % de la media · n = ${fit.n} · R² = ${fmt(fit.r2, 2)} · Spearman ρ = ${fmt(rho, 2)}. Modelos mixtos y splines quedan para el análisis definitivo.</p>`)}
+      ${panel(`Curvas ROC (caso: ${outcome.caseText(threshold)})`, `<div class="with-stats">${rocChart({ curves: models.map((m) => ({ name: DOSE_LABELS[m], points: rocs[m].points, color: MODEL_COLORS[m] })) })}<table class="stats"><thead><tr><th>Modelo</th><th>AUC (IC 95 %)</th></tr></thead><tbody>${models.map((m) => `<tr><th scope="row"><span class="dot-swatch" style="background:${MODEL_COLORS[m]}"></span>${DOSE_LABELS[m].split(' ·')[0]}</th><td>${fmt(rocs[m].auc, 2)} <span class="ci">(${fmt(rocs[m].ci[0], 2)}–${fmt(rocs[m].ci[1], 2)})</span></td></tr>`).join('')}</tbody></table></div><p class="hint">${cases} casos · ${controls} controles. Validación agrupada por docente pendiente: estas AUC son aparentes, sobre la misma muestra.</p>`)}
       ${panel(`Desempeño de ${DOSE_LABELS[dose]} en el corte de Youden`, perf ? `<table class="stats"><thead><tr><th>Métrica</th><th>Valor (IC 95 %)</th></tr></thead><tbody>
         <tr><th scope="row">Corte</th><td>${compact(best.threshold)} ${unit}</td></tr>
         <tr><th scope="row">AUC</th><td>${fmt(rocs[dose].auc, 2)} <span class="ci">(${fmt(rocs[dose].ci[0], 2)}–${fmt(rocs[dose].ci[1], 2)})</span></td></tr>
         <tr><th scope="row">Sensibilidad</th><td>${ci(perf.sensitivity)}</td></tr><tr><th scope="row">Especificidad</th><td>${ci(perf.specificity)}</td></tr>
         <tr><th scope="row">VPP</th><td>${ci(perf.ppv)}</td></tr><tr><th scope="row">VPN</th><td>${ci(perf.npv)}</td></tr>
-        <tr><th scope="row">Índice de Youden</th><td>${fmt(best.j, 2)}</td></tr></tbody></table>` : '<p class="board-empty">Hace falta EVA pre y post en casos y controles.</p>')}
+        <tr><th scope="row">Índice de Youden</th><td>${fmt(best.j, 2)}</td></tr></tbody></table>` : '<p class="board-empty">Hacen falta casos y controles con el desenlace elegido.</p>')}
       ${panel('Niveles de acción (provisionales)', levels.c1 !== null ? `<div class="levels"><div class="levels-bar"><span class="lv lv-good" style="width:${pos(levels.c1)}"></span><span class="lv lv-warning" style="width:calc(${pos(levels.c2 ?? levels.c1)} - ${pos(levels.c1)})"></span><span class="lv lv-critical" style="flex:1"></span></div>
         <p class="levels-cuts">C1 = ${compact(levels.c1)} ${unit} (Youden) · C2 = ${levels.c2 === null ? '—' : `${compact(levels.c2)} ${unit}`} (especificidad ≥ 0,90)</p>
         <ul class="levels-list"><li><span class="zone zone-good">▼ Baja</span> ${DOSE_LABELS[dose].split(' ·')[0]} &lt; C1</li><li><span class="zone zone-warning">● Media</span> C1 ≤ dosis &lt; C2: vigilancia y medidas preventivas</li><li><span class="zone zone-critical">▲ Alta</span> dosis ≥ C2</li></ul></div>

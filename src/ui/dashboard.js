@@ -16,6 +16,7 @@ import { createOptInRepository } from '../store/sync-settings.js';
 import { bindAutosaveTriggers, createWorkdayAutosaver, recoverCheckpoints } from '../store/workday-autosave.js';
 import { createBoards } from './boards/boards.js';
 import { preserveRecovery } from '../store/recovery.js';
+import { createRecoveryNotifier } from '../store/recovery-reminders.js';
 import { EVENT_LABELS } from './boards/views.js';
 import { DEFAULT_MODEL_PARAMS, meanDuration, phonationPercentage } from '../vocal-load.js';
 import { createLoadChart, zoneFor } from './load-chart.js';
@@ -220,12 +221,42 @@ const workdayRepository = preserveRecovery(createOptInRepository({
   }),
   isEnabled: syncPanel.isEnabled,
 }));
+// Recovery reminders (hito 10): a notification while the app is open, the in-app message
+// otherwise; the calendar file covers the app being closed.
+const recoveryNotifier = createRecoveryNotifier({
+  list: () => workdayRepository.list(),
+  notify: (r) => {
+    const until = r.closesAt.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    const body = `Registrá tu fatiga (${r.label}) en «Mi jornada». Se puede hasta las ${until}.`;
+    say(`Recuperación: ${body}`);
+    try {
+      if (globalThis.Notification?.permission === 'granted') new Notification('VocalDose · fatiga vocal', { body, tag: `${r.workdayId}:${r.slot}` });
+    } catch {
+      // Some mobile browsers only notify through a service worker; the in-app message stays.
+    }
+  },
+});
+const refreshReminders = () => recoveryNotifier.refresh().catch(() => {});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') refreshReminders();
+});
+refreshReminders();
+
 const boards = createBoards({
   roots: { teacher: $('tab-teacher'), director: $('tab-director'), analytics: $('tab-analytics') },
   bar: $('board-bar'),
   repository: workdayRepository,
   download: downloadText,
   say,
+  reminders: {
+    async enable() {
+      if (!globalThis.Notification) return 'unsupported';
+      const permission = await Notification.requestPermission();
+      refreshReminders();
+      return permission;
+    },
+    refresh: refreshReminders,
+  },
 });
 
 const tabs = [
@@ -312,8 +343,9 @@ $('jr-save').addEventListener('click', async () => {
       await boards.save(workday);
     }
     workdaySaved = true;
+    refreshReminders();
     setText($('jr-status'), `Guardada ${workday.id}`);
-    say(`Jornada guardada (${workday.events.length} eventos). Ya aparece en Mi jornada, Dirección y Analítica. En «Mi jornada» registrá tu fatiga a los 30 min, 1 h, 2 h y 4 h de terminar, y a la mañana siguiente.`);
+    say(`Jornada guardada (${workday.events.length} eventos). Ya aparece en Mi jornada, Dirección y Analítica. En «Mi jornada» registrá tu fatiga a los 30 min, 1 h, 2 h y 4 h de terminar, y a la mañana siguiente; ahí podés agregar esos horarios a tu calendario.`);
   } catch (error) {
     say(`No se pudo guardar la jornada: ${error.message.includes('code of') ? 'completá docente, escuela y aula con códigos (letras, números, «.», «-» o «_», sin espacios).' : error.message}`, 'error');
   }
