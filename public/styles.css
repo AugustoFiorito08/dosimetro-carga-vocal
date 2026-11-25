@@ -464,3 +464,164 @@ select, input[type='number'] {
 .sync-form .hint:empty { display: none; }
 .sync-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .sync-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---------- Teacher view (odd/tasks/vista-docente-movil.md) ---------- */
+/* A light, phone-first theme. The tokens are redefined on body, so the technical panels it
+   adopts (partitura, Mi jornada) and their canvases follow it too. */
+body[data-view='teacher'] {
+  color-scheme: light;
+  --bg: #eef3f9;
+  --panel: #ffffff;
+  --panel-raised: #f4f7fb;
+  --line: #d8e1ec;
+  --text: #13233a;
+  --muted: #5a6b80;
+  --accent: #1c5fb8;
+  --danger: #c23b32;
+  --chart-line: #1c5fb8;
+  --chart-fill: rgba(28, 95, 184, 0.08);
+  --chart-grid: rgba(19, 35, 58, 0.08);
+  --chart-text: #5a6b80;
+  --score-pause: rgba(28, 95, 184, 0.07);
+  --score-gap: rgba(19, 35, 58, 0.06);
+  --cat-silencio: #c9d3df;
+  --t-primary: #1c5fb8;
+  --t-primary-ink: #ffffff;
+  --t-hero: #123e7a;
+  --t-ok: #1f8a4c;
+  --t-warn: #b7791f;
+  --t-bad: #c23b32;
+  background: var(--bg);
+  font-size: 16px;
+}
+body[data-view='teacher'] > .topbar,
+body[data-view='teacher'] > .layout { display: none; }
+
+.teacher { max-width: 520px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+.t-top {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 16px; background: var(--t-hero); color: #fff;
+}
+.t-brand { margin: 0; font-weight: 700; font-size: 18px; letter-spacing: 0.01em; }
+.t-sub { margin: 0; font-size: 13px; opacity: 0.85; }
+.t-link { background: none; border: 1px solid rgba(255, 255, 255, 0.5); color: #fff; border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.t-main { flex: 1; padding: 16px 16px 96px; display: grid; gap: 16px; align-content: start; }
+.t-screen { display: grid; gap: 14px; align-content: start; }
+.t-screen h2, .t-sheet h2, .t-hero h2 { margin: 0; font-size: 22px; line-height: 1.25; color: var(--text); text-transform: none; letter-spacing: 0; }
+.t-section { margin: 8px 0 0; font-size: 16px; }
+.t-lead { margin: 0; color: var(--text); }
+.t-hint { margin: 0; color: var(--muted); font-size: 14px; }
+.t-text { margin: 0; padding: 14px 16px; background: var(--panel); border-left: 4px solid var(--t-primary); border-radius: 10px; font-size: 17px; line-height: 1.6; }
+
+.t-toast {
+  position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 20;
+  width: min(488px, calc(100% - 32px)); margin: 0; padding: 12px 14px; border-radius: 12px;
+  background: #13233a; color: #fff; font-size: 14px; box-shadow: 0 8px 24px rgba(19, 35, 58, 0.25);
+}
+.t-toast[data-tone='error'] { background: var(--t-bad); }
+
+.t-steps { display: flex; gap: 4px; margin: 0; padding: 0; list-style: none; overflow-x: auto; }
+.t-steps li { flex: 1 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); min-width: 52px; text-align: center; }
+.t-steps span { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; background: var(--line); color: var(--muted); }
+.t-steps li[data-state='current'] { color: var(--text); font-weight: 600; }
+.t-steps li[data-state='current'] span { background: var(--t-primary); color: #fff; }
+.t-steps li[data-state='done'] span { background: var(--t-ok); color: #fff; }
+
+.t-btn {
+  width: 100%; min-height: 52px; padding: 12px 16px; border: 0; border-radius: 12px;
+  background: var(--t-primary); color: var(--t-primary-ink); font: inherit; font-weight: 600; font-size: 17px; cursor: pointer;
+}
+.t-btn.secondary { background: var(--panel); color: var(--t-primary); border: 1.5px solid var(--t-primary); }
+.t-btn.danger { background: var(--t-bad); }
+.t-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.t-btn:focus-visible, .t-nav button:focus-visible, .t-link:focus-visible { outline: 3px solid #f0b429; outline-offset: 2px; }
+.t-row { display: grid; gap: 10px; }
+.t-actions { display: grid; gap: 10px; }
+
+.t-field { display: grid; gap: 6px; font-weight: 600; }
+.t-field input { min-height: 48px; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 10px; font: inherit; background: var(--panel); color: var(--text); }
+.t-check { margin: 0; padding: 14px 16px 14px 36px; background: var(--panel); border-radius: 12px; display: grid; gap: 8px; }
+
+.t-progress { display: grid; gap: 6px; }
+.t-progress-track { height: 12px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.t-progress-bar { height: 100%; width: 0; background: var(--t-primary); transition: width 0.2s linear; }
+.t-progress-label { margin: 0; font-weight: 600; text-align: center; }
+
+.t-vas-list { display: grid; gap: 12px; }
+.t-vas { display: grid; gap: 6px; padding: 12px 14px; background: var(--panel); border-radius: 12px; }
+.t-vas-head { display: flex; justify-content: space-between; font-weight: 600; }
+.t-vas output { font-variant-numeric: tabular-nums; color: var(--t-primary); }
+.t-vas input[type='range'] { width: 100%; height: 32px; accent-color: var(--t-primary); }
+.t-vas input[data-empty='true'] { opacity: 0.4; }
+.t-vas-scale { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+.t-optional { background: var(--panel); border-radius: 12px; padding: 12px 14px; display: grid; gap: 10px; }
+.t-optional summary { font-weight: 600; cursor: pointer; }
+.t-optional[open] > * + * { margin-top: 10px; }
+
+.t-done { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.t-done li { padding: 12px 14px; background: var(--panel); border-radius: 12px; display: flex; gap: 10px; align-items: center; }
+.t-done li::before { content: '○'; color: var(--muted); font-weight: 700; }
+.t-done li[data-ok='true']::before { content: '✓'; color: var(--t-ok); }
+
+.t-hero { background: var(--t-hero); color: #fff; border-radius: 16px; padding: 18px; text-align: center; }
+.t-hero h2 { color: #fff; font-size: 16px; font-weight: 600; }
+.t-hero-clock { margin: 6px 0 0; font: 700 40px/1.1 var(--font-data); letter-spacing: 0.02em; }
+.t-hero-state { margin: 4px 0 0; opacity: 0.85; }
+.t-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.t-chips li { padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--panel); border: 1.5px solid var(--line); }
+.t-chips li::before { content: '● '; }
+.t-chips li[data-state='ok']::before { color: var(--t-ok); }
+.t-chips li[data-state='warn']::before { color: var(--t-warn); }
+.t-chips li[data-state='bad']::before { color: var(--t-bad); }
+.t-chips li[data-state='idle']::before { color: var(--muted); }
+
+.t-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.t-card { background: var(--panel); border-radius: 12px; padding: 12px 14px; display: grid; gap: 2px; align-content: start; }
+.t-card h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+.t-value { margin: 0; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.t-sub-value { margin: 0; font-size: 13px; color: var(--muted); }
+.t-wide { grid-column: 1 / -1; }
+.t-compare { margin: 4px 0 0; font-size: 15px; }
+.t-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.t-list li { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; background: var(--panel); border-radius: 10px; }
+.t-list li span:first-child { font-variant-numeric: tabular-nums; color: var(--muted); }
+.t-badge { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--line); }
+.t-badge[data-tone='ok'] { background: #dcf1e4; color: var(--t-ok); }
+.t-badge[data-tone='pending'] { background: #fbefd5; color: var(--t-warn); }
+.t-badge[data-tone='bad'] { background: #f8dcd9; color: var(--t-bad); }
+
+.t-nav {
+  position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); z-index: 10;
+  width: min(520px, 100%); display: grid; grid-template-columns: repeat(3, 1fr);
+  background: var(--panel); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom);
+}
+.t-nav button { min-height: 60px; border: 0; background: none; font: inherit; font-size: 14px; color: var(--muted); cursor: pointer; }
+.t-nav button[aria-current='page'] { color: var(--t-primary); font-weight: 700; box-shadow: inset 0 3px 0 var(--t-primary); }
+
+.t-sheet { border: 0; border-radius: 16px; padding: 18px; width: min(480px, calc(100% - 32px)); background: var(--panel); color: var(--text); }
+.t-sheet::backdrop { background: rgba(19, 35, 58, 0.45); }
+.t-sheet h2 { margin: 0 0 12px; font-size: 20px; }
+.t-sheet-list { display: grid; gap: 8px; margin-bottom: 12px; }
+.t-sheet-list button { min-height: 52px; text-align: left; padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--panel-raised); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
+
+/* Adopted technical panels, simplified for the teacher: the partitura keeps phonation and
+   pauses, level and accumulated dose; Mi jornada keeps its board without the data bar. */
+body[data-view='teacher'] .teacher .panel { background: var(--panel); border-color: var(--line); }
+body[data-view='teacher'] .teacher .score-head,
+body[data-view='teacher'] .teacher .score-badge,
+body[data-view='teacher'] .teacher .score-analogy,
+body[data-view='teacher'] .teacher .score-tracks > .score-row:nth-of-type(2),
+body[data-view='teacher'] .teacher .score-tracks > .score-row:nth-of-type(4),
+body[data-view='teacher'] .teacher .score-tracks > .score-row:nth-of-type(5) { display: none; }
+body[data-view='teacher'] .teacher .board-disclaimer { font-size: 13px; }
+body:not([data-view='teacher']) .t-only,
+body[data-view='teacher'] .tech-only,
+body[data-view='teacher'] .teacher .score-num,
+body[data-view='teacher'] .teacher .score-callouts { display: none; }
+body[data-view='teacher'] .teacher .score-label { font-size: 14px; font-weight: 600; }
+/* Mi jornada for the teacher: only her own workdays, one dose, no rate chart. */
+body[data-view='teacher'] .teacher .board-filters > label:nth-of-type(1),
+body[data-view='teacher'] .teacher .board-filters > label:nth-of-type(3),
+body[data-view='teacher'] .teacher .board-grid > section:nth-of-type(2) { display: none; }
+body[data-view='teacher'] .teacher .board-grid { grid-template-columns: minmax(0, 1fr); }

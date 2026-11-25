@@ -53,13 +53,19 @@ export function personalComparison(workdays, { participantId, units, elapsedMin,
   return { status, n: past.length, median, p75, ratio: median > 0 ? dose / median : NaN };
 }
 
-/** The comparison in plain words for the teacher. */
-export function comparisonText(c) {
+/**
+ * The comparison in plain words for the teacher: during the workday (`now`, at the same
+ * elapsed time) or for the whole workday (`day`).
+ */
+export function comparisonText(c, { scope = 'now' } = {}) {
   if (c.status === 'insufficient') {
     const missing = MIN_HISTORY - c.n;
     return `Con ${missing} ${missing === 1 ? 'jornada más' : 'jornadas más'} vas a poder comparar con tu jornada habitual.`;
   }
-  if (c.status === 'above') return 'Hoy vas por encima de tu jornada habitual a esta hora.';
-  if (c.status === 'above_median') return 'Hoy vas algo por encima de tu mediana, dentro de lo que te suele pasar.';
-  return 'Hoy vas dentro de tu jornada habitual a esta hora.';
+  const day = scope === 'day';
+  if (c.status === 'above') return day ? 'Esta jornada estuvo por encima de tu jornada habitual.' : 'Hoy vas por encima de tu jornada habitual a esta hora.';
+  if (c.status === 'above_median') {
+    return day ? 'Esta jornada estuvo algo por encima de tu mediana, dentro de lo que te suele pasar.' : 'Hoy vas algo por encima de tu mediana, dentro de lo que te suele pasar.';
+  }
+  return day ? 'Esta jornada estuvo dentro de tu jornada habitual.' : 'Hoy vas dentro de tu jornada habitual a esta hora.';
 }

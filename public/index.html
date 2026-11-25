@@ -18,7 +18,184 @@
         <span id="mode-label">Sin audio</span>
         <span class="clock" id="session-clock">00:00:00</span>
       </div>
+      <button type="button" class="btn" id="to-teacher">Vista docente</button>
     </header>
+
+    <!-- Teacher view (odd/tasks/vista-docente-movil.md): a guided phone flow over the same session. -->
+    <div class="teacher" id="teacher-app" hidden>
+      <header class="t-top">
+        <div>
+          <p class="t-brand">VocalDose</p>
+          <p class="t-sub" id="t-sub">Dosimetría vocal</p>
+        </div>
+        <button type="button" class="t-link" id="to-technical">Vista técnica</button>
+      </header>
+      <p class="t-toast" id="t-toast" role="status" aria-live="polite" hidden></p>
+
+      <main class="t-main">
+        <ol class="t-steps" id="t-steps" aria-label="Preparación"></ol>
+
+        <section class="t-screen" data-screen="codes" aria-labelledby="t-codes-title">
+          <h2 id="t-codes-title">Tus datos</h2>
+          <p class="t-lead">Usá los códigos que te dio el equipo de investigación, nunca tu nombre. Se recuerdan en este celular.</p>
+          <label class="t-field">Docente<input data-mirror="jr-participant" type="text" placeholder="P-0421" autocomplete="off" autocapitalize="characters" /></label>
+          <label class="t-field">Escuela<input data-mirror="jr-school" type="text" placeholder="E-25" autocomplete="off" autocapitalize="characters" /></label>
+          <label class="t-field">Aula<input data-mirror="jr-classroom" type="text" placeholder="2B" autocomplete="off" autocapitalize="characters" /></label>
+          <button type="button" class="t-btn" data-action="codes">Continuar</button>
+        </section>
+
+        <section class="t-screen" data-screen="microphone" aria-labelledby="t-mic-title">
+          <h2 id="t-mic-title">Micrófono</h2>
+          <ol class="t-check">
+            <li>Colocá el micrófono de diadema a 2–3 cm de la boca, hacia un costado.</li>
+            <li>Conectalo al celular.</li>
+            <li>No lo muevas durante toda la jornada.</li>
+          </ol>
+          <button type="button" class="t-btn" data-action="connect">Conectar micrófono</button>
+          <p class="t-hint" id="t-device-info">Se usa el micrófono conectado al celular.</p>
+        </section>
+
+        <section class="t-screen" data-screen="ambient" aria-labelledby="t-ambient-title">
+          <h2 id="t-ambient-title">Silencio del ambiente</h2>
+          <p class="t-lead">Quedate en silencio 5 segundos, sin hablar ni mover el micrófono. Sirve para que la app distinga tu voz del ruido de fondo.</p>
+          <div class="t-progress" data-progress hidden><div class="t-progress-track"><div class="t-progress-bar"></div></div><p class="t-progress-label"></p></div>
+          <button type="button" class="t-btn" data-action="ambient">Medir el silencio (5 s)</button>
+        </section>
+
+        <section class="t-screen" data-screen="enrol" aria-labelledby="t-enrol-title">
+          <h2 id="t-enrol-title">Que la app reconozca tu voz</h2>
+          <p class="t-lead">Hablá 15 segundos de corrido, sobre cualquier tema y con variedad de vocales. La primera mitad con tu voz normal; cuando la barra llegue a la mitad, en voz alta, como al dar clase.</p>
+          <p class="t-hint">Sirve para reconocer tu voz entre otras, no para medir cuánto la usás.</p>
+          <div class="t-progress" data-progress hidden><div class="t-progress-track"><div class="t-progress-bar"></div></div><p class="t-progress-label"></p></div>
+          <button type="button" class="t-btn" data-action="enrol">Empezar a hablar (15 s)</button>
+          <button type="button" class="t-btn secondary" data-action="enrol-accept" hidden>Seguir de todos modos</button>
+        </section>
+
+        <section class="t-screen" data-screen="reference" aria-labelledby="t-reference-title">
+          <h2 id="t-reference-title">Tu voz habitual</h2>
+          <p class="t-lead">Leé este texto con tu voz cómoda de conversación: ni fuerte ni de clase. Son 30 segundos; si terminás antes, volvé a empezar.</p>
+          <blockquote class="t-text va-text-body"></blockquote>
+          <p class="t-hint">Es el punto de partida para comparar cuánto elevás la voz durante el día.</p>
+          <div class="t-progress" data-progress hidden><div class="t-progress-track"><div class="t-progress-bar"></div></div><p class="t-progress-label"></p></div>
+          <button type="button" class="t-btn" data-action="reference">Empezar la lectura (30 s)</button>
+        </section>
+
+        <section class="t-screen" data-screen="pre" aria-labelledby="t-pre-title">
+          <h2 id="t-pre-title">¿Cómo está tu voz ahora?</h2>
+          <p class="t-lead">Antes de empezar. Mové cada barra: 0 = nada, 100 = lo máximo que te puedas imaginar.</p>
+          <div class="t-vas-list" data-timepoint="pre"></div>
+          <details class="t-optional">
+            <summary>Pruebas de voz (opcional)</summary>
+            <p class="t-hint">Mismo celular, misma distancia y misma postura que al terminar. Se analizan en el momento y el audio se borra.</p>
+            <div class="t-row">
+              <button type="button" class="t-btn secondary" data-click="va-pre-vowel">Vocal /a/ sostenida (5 s)</button>
+              <button type="button" class="t-btn secondary" data-click="va-pre-speech">Leer el texto (25 s)</button>
+            </div>
+            <p class="t-hint" data-mirror-text="va-pre-status"></p>
+          </details>
+          <button type="button" class="t-btn" data-action="pre">Continuar</button>
+        </section>
+
+        <section class="t-screen" data-screen="ready" aria-labelledby="t-ready-title">
+          <h2 id="t-ready-title">Todo listo</h2>
+          <ul class="t-done" id="t-ready-list"></ul>
+          <p class="t-lead">Dejá el celular con la pantalla encendida y el micrófono puesto. La app solo guarda números, nunca tu voz.</p>
+          <button type="button" class="t-btn" data-action="start">Iniciar la jornada</button>
+        </section>
+
+        <section class="t-screen" data-screen="live" aria-labelledby="t-live-title">
+          <div class="t-hero">
+            <h2 id="t-live-title">Dosimetría en curso</h2>
+            <p class="t-hero-clock" id="t-live-clock">00:00:00</p>
+            <p class="t-hero-state" id="t-live-state">Midiendo</p>
+          </div>
+          <ul class="t-chips" aria-label="Estado de la medición">
+            <li id="t-chip-mic">Micrófono</li>
+            <li id="t-chip-signal">Señal</li>
+            <li id="t-chip-voice">Tu voz</li>
+          </ul>
+          <div class="t-cards">
+            <article class="t-card"><h3>Hablaste</h3><p class="t-value" id="t-phonation">—</p><p class="t-sub-value" id="t-phonation-pct">—</p></article>
+            <article class="t-card"><h3>Pausa actual</h3><p class="t-value" id="t-pause">—</p><p class="t-sub-value">sin hablar</p></article>
+            <article class="t-card"><h3>Tono (F0)</h3><p class="t-value" id="t-f0">—</p><p class="t-sub-value" id="t-f0-mean">—</p></article>
+            <article class="t-card"><h3>Volumen</h3><p class="t-value" id="t-level">—</p><p class="t-sub-value" id="t-level-note">—</p></article>
+          </div>
+          <article class="t-card t-wide">
+            <h3>Carga vocal acumulada</h3>
+            <p class="t-value" id="t-dose">—</p>
+            <p class="t-sub-value">Vibraciones de tus cuerdas vocales, pesadas por el volumen. En las pausas no baja: deja de crecer.</p>
+            <p class="t-compare" id="t-compare">—</p>
+          </article>
+          <div class="t-actions">
+            <button type="button" class="t-btn secondary" data-action="activity">Marcar qué estoy haciendo</button>
+            <button type="button" class="t-btn secondary" data-action="pause">Pausar</button>
+            <button type="button" class="t-btn secondary" data-action="resume" hidden>Continuar</button>
+            <button type="button" class="t-btn danger" data-action="finish">Finalizar la jornada</button>
+          </div>
+          <p class="t-hint" id="t-last-activity"></p>
+        </section>
+
+        <section class="t-screen" data-screen="post" aria-labelledby="t-post-title">
+          <h2 id="t-post-title">Jornada finalizada</h2>
+          <p class="t-lead">¿Cómo está tu voz ahora? 0 = nada, 100 = lo máximo que te puedas imaginar.</p>
+          <div class="t-vas-list" data-timepoint="post"></div>
+          <details class="t-optional">
+            <summary>Pruebas de voz (opcional)</summary>
+            <div class="t-row">
+              <button type="button" class="t-btn secondary" data-click="va-post-vowel">Vocal /a/ sostenida (5 s)</button>
+              <button type="button" class="t-btn secondary" data-click="va-post-speech">Leer el texto (25 s)</button>
+            </div>
+            <p class="t-hint" data-mirror-text="va-post-status"></p>
+          </details>
+          <button type="button" class="t-btn" data-action="save">Guardar la jornada</button>
+        </section>
+
+        <section class="t-screen" data-screen="summary" aria-labelledby="t-summary-title">
+          <h2 id="t-summary-title">Resumen de la jornada</h2>
+          <div class="t-cards" id="t-summary-cards"></div>
+          <article class="t-card t-wide"><h3>Comparada con tus jornadas</h3><p class="t-compare" id="t-summary-compare">—</p></article>
+          <article class="t-card t-wide"><h3>Lo que marcaste</h3><ul class="t-list" id="t-summary-events"></ul></article>
+          <article class="t-card t-wide"><h3>Envío de datos</h3><p class="t-compare" id="t-summary-sync">—</p></article>
+          <div class="t-actions">
+            <button type="button" class="t-btn" data-go="journal">Seguimiento de la recuperación</button>
+            <button type="button" class="t-btn secondary" data-go="score">Ver la partitura</button>
+            <button type="button" class="t-btn secondary" data-action="new-day">Empezar otra jornada</button>
+          </div>
+        </section>
+
+        <section class="t-screen" data-screen="score" aria-labelledby="t-score-title">
+          <h2 id="t-score-title">Partitura de tu voz</h2>
+          <p class="t-lead">Cómo usaste la voz a lo largo del día: cuándo hablaste, con qué volumen y cómo se fue acumulando la carga. En las pausas la carga no baja: deja de crecer.</p>
+          <div data-slot="score"></div>
+          <article class="t-card t-wide"><h3>Lo que marcaste</h3><ul class="t-list" id="t-score-events"></ul></article>
+        </section>
+
+        <section class="t-screen" data-screen="journal" aria-labelledby="t-journal-title">
+          <h2 id="t-journal-title">Mi jornada</h2>
+          <div data-slot="teacher-board"></div>
+          <h3 class="t-section">Jornadas en este celular</h3>
+          <ul class="t-list" id="t-history"></ul>
+        </section>
+      </main>
+
+      <nav class="t-nav" aria-label="Secciones">
+        <button type="button" data-tab="flow" aria-current="page">Jornada</button>
+        <button type="button" data-tab="score">Partitura</button>
+        <button type="button" data-tab="journal">Mi jornada</button>
+      </nav>
+
+      <dialog class="t-sheet" id="t-activity" aria-labelledby="t-activity-title">
+        <h2 id="t-activity-title">¿Qué estás haciendo?</h2>
+        <div class="t-sheet-list">
+          <button type="button" data-event="explicacion">Explicando</button>
+          <button type="button" data-event="llamado_atencion">Llamando la atención</button>
+          <button type="button" data-event="actividad_grupal">Actividad grupal</button>
+          <button type="button" data-event="recreo">Recreo</button>
+          <button type="button" data-event="otro">Otra actividad</button>
+        </div>
+        <button type="button" class="t-btn secondary" data-close>Cancelar</button>
+      </dialog>
+    </div>
 
     <main class="layout">
       <aside class="panel setup" aria-labelledby="setup-title">
@@ -309,9 +486,9 @@
 
           <div class="score-tracks">
             <div class="score-row" data-row="phi">
-              <div class="score-label"><span class="score-num">1</span><span>Fonación y pausas<b>Φ(t)</b></span></div>
+              <div class="score-label"><span class="score-num">1</span><span class="tech-only">Fonación y pausas<b>Φ(t)</b></span><span class="t-only">Cuándo hablaste</span></div>
               <canvas data-track="phi" aria-label="Fonación atribuida y pausas a lo largo de la sesión"></canvas>
-              <p class="score-note">Bloques de fonación atribuida e intervalos de pausa.</p>
+              <p class="score-note"><span class="tech-only">Bloques de fonación atribuida e intervalos de pausa.</span><span class="t-only">Cada bloque es un momento en que hablaste; los huecos son tus pausas.</span></p>
             </div>
             <div class="score-row">
               <div class="score-label"><span class="score-num">2</span><span>Frecuencia fundamental<b>F<sub>0</sub> (Hz)</b></span></div>
@@ -319,9 +496,9 @@
               <p class="score-note">Solo durante la voz atribuida; sin valores en las pausas.</p>
             </div>
             <div class="score-row">
-              <div class="score-label"><span class="score-num">3</span><span>Nivel vocal<b>L<sub>p</sub> (<span id="score-level-unit">dBFS</span>)</b></span></div>
+              <div class="score-label"><span class="score-num">3</span><span class="tech-only">Nivel vocal<b>L<sub>p</sub> (<span id="score-level-unit">dBFS</span>)</b></span><span class="t-only">Volumen de tu voz</span></div>
               <canvas data-track="level" aria-label="Nivel vocal durante la voz"></canvas>
-              <p class="score-note">Solo durante la voz. dB SPL si la sesión está calibrada; dBFS si no.</p>
+              <p class="score-note"><span class="tech-only">Solo durante la voz. dB SPL si la sesión está calibrada; dBFS si no.</span><span class="t-only">Más arriba es más fuerte. Solo se marca mientras hablás.</span></p>
             </div>
             <div class="score-row">
               <div class="score-label"><span class="score-num">4</span><span>Memoria modelada<b>H(t) (s)</b></span></div>
@@ -334,9 +511,9 @@
               <p class="score-note">Picos de acumulación; cero en las pausas.</p>
             </div>
             <div class="score-row">
-              <div class="score-label"><span class="score-num">6</span><span>Dosis acumulada<b><span id="score-dose-name">D<sub>0</sub></span> (<span id="score-dose-unit">u</span>)</b></span></div>
+              <div class="score-label"><span class="score-num">6</span><span class="tech-only">Dosis acumulada<b><span id="score-dose-name">D<sub>0</sub></span> (<span id="score-dose-unit">u</span>)</b></span><span class="t-only">Carga acumulada</span></div>
               <canvas data-track="dose" aria-label="Dosis acumulada"></canvas>
-              <p class="score-note">Siempre creciente o plana; mesetas en las pausas.</p>
+              <p class="score-note"><span class="tech-only">Siempre creciente o plana; mesetas en las pausas.</span><span class="t-only">Sube mientras hablás; en las pausas queda plana, no baja.</span></p>
             </div>
             <div class="score-row score-axis-row">
               <span></span>

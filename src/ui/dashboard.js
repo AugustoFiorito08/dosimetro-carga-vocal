@@ -24,6 +24,7 @@ import { createScoreChart } from './score-chart.js';
 import { createScoreSeries } from './score-series.js';
 import { createSyncPanel } from './sync-panel.js';
 import { createVoiceAssessmentPanel } from './voice-assessment-panel.js';
+import { createTeacherApp, initialView } from './teacher/teacher-app.js';
 
 const CATEGORY_LABELS = {
   fonacion_atribuida: 'Fonación atribuida',
@@ -118,6 +119,7 @@ let progress = null;
 let busy = false;
 let sessionStartedAt = null;
 let microphoneLabel = '';
+let teacher = null; // teacher view (src/ui/teacher), created once every action exists
 
 // ---------- formatting ----------
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -144,6 +146,7 @@ function setAttr(node, name, value) {
 function say(text, tone = 'info') {
   el.message.textContent = text;
   el.message.dataset.tone = tone;
+  teacher?.toast(text, tone);
 }
 
 // ---------- device & setup ----------
@@ -266,7 +269,9 @@ const tabs = [
   { button: $('tab-btn-director'), panel: $('tab-director'), board: 'director' },
   { button: $('tab-btn-analytics'), panel: $('tab-analytics'), board: 'analytics' },
 ];
+let currentTab = 0;
 function selectTab(index) {
+  currentTab = index;
   tabs.forEach(({ button, panel }, i) => {
     const selected = i === index;
     button.setAttribute('aria-selected', String(selected));
@@ -796,8 +801,35 @@ function render() {
   renderControls(session);
   renderLive(session);
   renderDiagnostics(session);
+  teacher?.render();
   requestAnimationFrame(render);
 }
+
+// ---------- teacher view (odd/tasks/vista-docente-movil.md) ----------
+teacher = createTeacherApp({
+  root: $('teacher-app'),
+  $,
+  actions: {
+    connectMicrophone, calibrateAmbient, enrollSpeaker, takeReference, startSession,
+    pauseSession, resumeSession, finishSession, markEvent, saveWorkday,
+  },
+  getSession: () => manager.session,
+  getProgress: () => progress,
+  isSaved: () => workdaySaved,
+  getInterruption: () => manager.interruption,
+  scoreSeries,
+  adopt: { score: $('tab-score'), 'teacher-board': $('tab-teacher') },
+  boards,
+  repository: workdayRepository,
+  outbox,
+  isSyncEnabled: syncPanel.isEnabled,
+  onView: (view) => { if (view === 'technical') selectTab(currentTab); },
+  onScoreShown: () => score.refresh(),
+  getEvents: () => workdayEvents,
+  getStartedAt: () => sessionStartedAt,
+});
+$('to-teacher').addEventListener('click', () => teacher.setView('teacher'));
+teacher.setView(initialView());
 
 populateDevices().catch((error) => say(error.message, 'error'));
 chart.start();

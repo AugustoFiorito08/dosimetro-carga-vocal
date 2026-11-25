@@ -88,9 +88,25 @@ describe('personal comparison', () => {
     assert.match(comparisonText({ status: 'above_median', n: 5 }), /algo por encima/);
     assert.match(comparisonText({ status: 'above', n: 5 }), /por encima de tu jornada habitual/);
     for (const s of ['usual', 'above_median', 'above']) assert.doesNotMatch(comparisonText({ status: s, n: 5 }), /zona|amarill|roj|alta carga/i);
+    assert.match(comparisonText({ status: 'above', n: 5 }, { scope: 'day' }), /^Esta jornada estuvo por encima/);
+    assert.doesNotMatch(comparisonText({ status: 'usual', n: 5 }, { scope: 'day' }), /a esta hora/);
   });
 });
 
 function near(a, b, tol = 1e-9) {
   assert.ok(Math.abs(a - b) <= tol, `${a} vs ${b}`);
 }
+
+describe('initial view', () => {
+  it('keeps the user choice, else the teacher view on a phone-sized screen', async () => {
+    const { initialView } = await import('../src/ui/teacher/teacher-app.js');
+    const storage = (value) => ({ getItem: () => value });
+    const screen = (phone) => () => ({ matches: phone });
+    assert.equal(initialView({ storage: storage('technical'), matchMedia: screen(true) }), 'technical');
+    assert.equal(initialView({ storage: storage('teacher'), matchMedia: screen(false) }), 'teacher');
+    assert.equal(initialView({ storage: storage(null), matchMedia: screen(true) }), 'teacher');
+    assert.equal(initialView({ storage: storage(null), matchMedia: screen(false) }), 'technical');
+    const broken = { getItem: () => { throw new Error('blocked'); } };
+    assert.equal(initialView({ storage: broken, matchMedia: screen(true) }), 'teacher');
+  });
+});
