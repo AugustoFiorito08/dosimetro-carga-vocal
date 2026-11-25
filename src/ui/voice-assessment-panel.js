@@ -154,6 +154,10 @@ export function createVoiceAssessmentPanel({ $, say, getSession, getMicrophone, 
         $(`va-${tp.toLowerCase()}-speech`).disabled = !idle;
       }
     },
+    /** Whether both guided takes (/a/ and the text) of a timepoint were accepted. */
+    samplesDone(timepoint) {
+      return Boolean(state[timepoint].VOWEL && state[timepoint].SPEECH);
+    },
     /** The assessment for the workday record, or null when nothing was done. */
     forWorkday() {
       const a = workdayAssessment(state);

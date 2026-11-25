@@ -816,6 +816,7 @@ teacher = createTeacherApp({
   getSession: () => manager.session,
   getProgress: () => progress,
   isSaved: () => workdaySaved,
+  samplesDone: (timepoint) => assessment.samplesDone(timepoint),
   getInterruption: () => manager.interruption,
   scoreSeries,
   adopt: { score: $('tab-score'), 'teacher-board': $('tab-teacher') },

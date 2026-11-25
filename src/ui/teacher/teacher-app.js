@@ -59,6 +59,7 @@ export function initialView({ storage = globalThis.localStorage, matchMedia = gl
  * @param {() => object | null} deps.getSession
  * @param {() => object | null} deps.getProgress
  * @param {() => boolean} deps.isSaved
+ * @param {(timepoint: 'PRE' | 'POST') => boolean} deps.samplesDone both acoustic voice takes accepted
  * @param {() => object | null} deps.getInterruption
  * @param {{ voicedValues(key: string): number[] }} deps.scoreSeries
  * @param {Record<string, HTMLElement>} deps.adopt nodes of the technical view shown inside the teacher view, by slot
@@ -183,6 +184,7 @@ export function createTeacherApp(deps) {
     reference: () => run(actions.takeReference, 'Listo: tu voz habitual quedó registrada.'),
     pre: () => {
       if (!fatigueSet('pre')) return toast('Marcá al menos la fatiga vocal antes de empezar.', 'error');
+      if (!deps.samplesDone('PRE')) return toast('Grabá la vocal /a/ y la lectura del texto antes de empezar.', 'error');
       ui.preConfirmed = true;
     },
     start: () => run(async () => {
@@ -200,6 +202,7 @@ export function createTeacherApp(deps) {
     },
     save: () => {
       if (!fatigueSet('post')) return toast('Marcá al menos la fatiga vocal para guardar la jornada.', 'error');
+      if (!deps.samplesDone('POST')) return toast('Grabá la vocal /a/ y la lectura del texto para guardar la jornada.', 'error');
       return run(async () => {
         const workday = await actions.saveWorkday();
         if (workday) {
@@ -299,7 +302,7 @@ export function createTeacherApp(deps) {
       enrolled: Boolean(session?.profile) && (!lowProfile(session) || ui.enrolAccepted),
       referenceDone: Boolean(session?.voiceReference),
       calibrated: Boolean(session?.acousticCalibration),
-      preDone: ui.preConfirmed && fatigueSet('pre'),
+      preDone: ui.preConfirmed && fatigueSet('pre') && deps.samplesDone('PRE'),
       mode: session?.mode ?? null,
       recordCount: session?.recordCount ?? 0,
       saved: deps.isSaved(),
@@ -353,6 +356,7 @@ export function createTeacherApp(deps) {
       ['Tu voz reconocida', Boolean(session?.profile)],
       [session?.acousticCalibration ? 'Micrófono calibrado' : 'Voz habitual registrada', Boolean(session?.voiceReference || session?.acousticCalibration)],
       ['Cómo estás antes de empezar', fatigueSet('pre')],
+      ['Pruebas de voz antes de empezar', deps.samplesDone('PRE')],
     ];
     const html = items.map(([label, ok]) => `<li data-ok="${ok}">${label}</li>`).join('');
     const list = $('t-ready-list');

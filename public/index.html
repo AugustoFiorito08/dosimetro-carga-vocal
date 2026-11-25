@@ -84,15 +84,15 @@
           <h2 id="t-pre-title">¿Cómo está tu voz ahora?</h2>
           <p class="t-lead">Antes de empezar. Mové cada barra: 0 = nada, 100 = lo máximo que te puedas imaginar.</p>
           <div class="t-vas-list" data-timepoint="pre"></div>
-          <details class="t-optional">
-            <summary>Pruebas de voz (opcional)</summary>
-            <p class="t-hint">Mismo celular, misma distancia y misma postura que al terminar. Se analizan en el momento y el audio se borra.</p>
-            <div class="t-row">
-              <button type="button" class="t-btn secondary" data-click="va-pre-vowel">Vocal /a/ sostenida (5 s)</button>
-              <button type="button" class="t-btn secondary" data-click="va-pre-speech">Leer el texto (25 s)</button>
-            </div>
+          <div class="t-voice-tests">
+            <h3>Pruebas de voz</h3>
+            <p class="t-hint">Son el dato objetivo de cómo está tu voz. Mismo celular, misma distancia y misma postura que al terminar. Se analizan en el momento y el audio se borra.</p>
+            <button type="button" class="t-btn secondary" data-click="va-pre-vowel">1. Vocal /a/ sostenida (5 s)</button>
+            <p class="t-hint">2. Leé este texto en voz alta, como hablás en clase:</p>
+            <blockquote class="t-text va-text-body"></blockquote>
+            <button type="button" class="t-btn secondary" data-click="va-pre-speech">Leer el texto (25 s)</button>
             <p class="t-hint" data-mirror-text="va-pre-status"></p>
-          </details>
+          </div>
           <button type="button" class="t-btn" data-action="pre">Continuar</button>
         </section>
 
@@ -139,14 +139,15 @@
           <h2 id="t-post-title">Jornada finalizada</h2>
           <p class="t-lead">¿Cómo está tu voz ahora? 0 = nada, 100 = lo máximo que te puedas imaginar.</p>
           <div class="t-vas-list" data-timepoint="post"></div>
-          <details class="t-optional">
-            <summary>Pruebas de voz (opcional)</summary>
-            <div class="t-row">
-              <button type="button" class="t-btn secondary" data-click="va-post-vowel">Vocal /a/ sostenida (5 s)</button>
-              <button type="button" class="t-btn secondary" data-click="va-post-speech">Leer el texto (25 s)</button>
-            </div>
+          <div class="t-voice-tests">
+            <h3>Pruebas de voz</h3>
+            <p class="t-hint">Igual que al empezar: mismo celular, misma distancia y misma postura.</p>
+            <button type="button" class="t-btn secondary" data-click="va-post-vowel">1. Vocal /a/ sostenida (5 s)</button>
+            <p class="t-hint">2. Leé este texto en voz alta, como hablás en clase:</p>
+            <blockquote class="t-text va-text-body"></blockquote>
+            <button type="button" class="t-btn secondary" data-click="va-post-speech">Leer el texto (25 s)</button>
             <p class="t-hint" data-mirror-text="va-post-status"></p>
-          </details>
+          </div>
           <button type="button" class="t-btn" data-action="save">Guardar la jornada</button>
         </section>
 
