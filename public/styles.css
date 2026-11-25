@@ -563,9 +563,19 @@ body[data-view='teacher'] > .layout { display: none; }
 .t-vas output { font-variant-numeric: tabular-nums; color: var(--t-primary); }
 .t-vas input[type='range'] { width: 100%; height: 32px; accent-color: var(--t-primary); }
 .t-vas input[data-empty='true'] { opacity: 0.4; }
-.t-vas-scale { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+.t-vas-scale { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--muted); }
+.t-vas-scale span { max-width: 48%; }
+.t-vas-scale span:last-child { text-align: right; }
 .t-voice-tests { background: var(--panel); border-radius: 12px; padding: 12px 14px; display: grid; gap: 10px; }
 .t-voice-tests h3 { margin: 0; font-size: 1rem; }
+.t-scale, .t-familiarization { background: var(--panel); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; }
+.t-scale h3, .t-familiarization h3 { margin: 0; font-size: 1rem; }
+.t-consigna { margin: 0; font-size: 0.92rem; line-height: 1.45; }
+.t-examples { margin: 0; padding-left: 1.1rem; display: grid; gap: 6px; font-size: 0.92rem; line-height: 1.45; }
+.t-borg { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; }
+.t-borg-option { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.t-borg-option:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.t-borg-option input { margin: 0; width: 18px; height: 18px; flex: none; }
 
 .t-done { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
 .t-done li { padding: 12px 14px; background: var(--panel); border-radius: 12px; display: flex; gap: 10px; align-items: center; }
@@ -633,3 +643,5 @@ body[data-view='teacher'] .teacher .board-filters > label:nth-of-type(1),
 body[data-view='teacher'] .teacher .board-filters > label:nth-of-type(3),
 body[data-view='teacher'] .teacher .board-grid > section:nth-of-type(2) { display: none; }
 body[data-view='teacher'] .teacher .board-grid { grid-template-columns: minmax(0, 1fr); }
+
+.borg { display: grid; gap: 4px; font-size: 12px; color: var(--muted); margin: 6px 0; }

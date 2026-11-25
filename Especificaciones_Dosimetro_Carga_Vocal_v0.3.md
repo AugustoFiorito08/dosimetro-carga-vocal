@@ -622,7 +622,7 @@ Las AUC son aparentes (misma muestra); la validación agrupada por docente, los 
 
 La docente usa una vista propia, pensada para el celular, con el mismo motor de medición que la vista técnica. Se abre sola en pantallas de hasta 760 px de ancho; el botón «Vista técnica» / «Vista docente» cambia de una a otra y la elección queda guardada en el navegador. La vista técnica conserva la calibración acústica, la dosis de distancia, el umbral de similitud, la exportación del CSV y los tableros de Dirección y Analítica.
 
-**Recorrido guiado**, una pantalla por vez, con el avance marcado arriba: datos (códigos seudónimos, que se recuerdan), micrófono (diadema a 2–3 cm de la boca), silencio del ambiente (5 s), reconocimiento de la voz (15 s: primero voz normal y, desde la mitad, voz de clase; si la app reconoce menos del 60 % de la voz de prueba, se ofrece repetir o seguir), voz habitual (lectura del texto estándar, 30 s; no hace falta si la sesión está calibrada), cómo está la voz antes de empezar (EVA de fatiga, esfuerzo, molestia y sequedad con barras deslizantes; la fatiga es obligatoria) y las pruebas acústicas de §23, también obligatorias porque son el dato objetivo de la voz: /a/ sostenida y lectura del texto estándar, que se muestra en la misma pantalla. Después viene el inicio.
+**Recorrido guiado**, una pantalla por vez, con el avance marcado arriba: datos (códigos seudónimos, que se recuerdan), micrófono (diadema a 2–3 cm de la boca), silencio del ambiente (5 s), reconocimiento de la voz (15 s: primero voz normal y, desde la mitad, voz de clase; si la app reconoce menos del 60 % de la voz de prueba, se ofrece repetir o seguir), voz habitual (lectura del texto estándar, 30 s; no hace falta si la sesión está calibrada), y cómo está la voz antes de empezar, en el orden del protocolo de §23.1: primero las pruebas acústicas, obligatorias porque son el dato objetivo de la voz (/a/ sostenida y lectura del texto estándar, que se muestra en la misma pantalla); después el esfuerzo (Borg CR10, eligiendo una de las diez frases), el cansancio de la voz (EVA, obligatoria) y la sequedad y la molestia (EVA), cada una con su consigna y los textos de los extremos de la hoja de respuesta. La primera vez, antes de todo, se muestran los tres ejemplos de referencia del esfuerzo. Después viene el inicio.
 
 **Durante la jornada**: tiempo transcurrido; estado de la medición (micrófono, señal y voz reconocida en los últimos 10 s); tiempo y porcentaje hablado; pausa actual; F0 actual y su mediana del día; volumen en dB respecto de la voz habitual (dB SPL si la sesión está calibrada); carga acumulada (`D_0`, en vibraciones ponderadas por el volumen) y su comparación con la propia historia; «Marcar qué estoy haciendo» (explicando, llamando la atención, actividad grupal, recreo u otra), pausa y fin.
 
@@ -630,7 +630,7 @@ La docente usa una vista propia, pensada para el celular, con el mismo motor de 
 
 **La actividad la marca la docente.** La app no la detecta: los eventos automáticos (§12.2) describen el patrón acústico, no la actividad.
 
-**Al terminar**: EVA POST con barras (fatiga obligatoria), las mismas dos pruebas acústicas con el texto a la vista (obligatorias) y guardado. Una muestra rechazada por calidad no cuenta: hay que repetirla; una guardada con advertencia sí cuenta. En la vista técnica no son obligatorias: si faltan, al iniciar o al guardar la jornada se avisa y se puede seguir. El resumen muestra duración, tiempo hablado, F0 mediana, cambio de fatiga, la comparación de la jornada, lo que marcó y el estado del envío, dicho como es: «guardada solo en este celular» si el envío no está activado; si lo está, «pendiente de envío» (se manda solo cuando hay conexión, por HTTPS, solo el resumen y sin audio), «enviada» o «la base del estudio no la aceptó».
+**Al terminar**: el mismo orden que al empezar, sin los ejemplos de referencia: las dos pruebas acústicas con el texto a la vista (obligatorias), el esfuerzo (Borg CR10), el cansancio de la voz (EVA, obligatoria), la sequedad y la molestia, y guardado. Una muestra rechazada por calidad no cuenta: hay que repetirla; una guardada con advertencia sí cuenta. En la vista técnica no son obligatorias: si faltan, al iniciar o al guardar la jornada se avisa y se puede seguir. El resumen muestra duración, tiempo hablado, F0 mediana, cambio de fatiga, la comparación de la jornada, lo que marcó y el estado del envío, dicho como es: «guardada solo en este celular» si el envío no está activado; si lo está, «pendiente de envío» (se manda solo cuando hay conexión, por HTTPS, solo el resumen y sin audio), «enviada» o «la base del estudio no la aceptó».
 
 **Partitura** simplificada: cuándo habló, volumen de la voz y carga acumulada, con explicaciones en lenguaje llano, más la lista de lo que marcó. **Mi jornada** muestra la jornada elegida (carga acumulada, recuperación con avisos y calendario de §24, y eventos) y la lista de jornadas guardadas en el celular con su estado de envío.
 
@@ -906,7 +906,7 @@ Evaluación breve y estandarizada al comienzo y al final de la jornada, distinta
 | Dimensión | Qué mide | Variables |
 |---|---|---|
 | Exposición | Cómo se usó la voz | `D_k`, F0, intensidad, fonación, pausas |
-| Respuesta subjetiva | Cómo percibe la persona su voz | ΔF (fatiga), ΔE (esfuerzo), molestia, sequedad |
+| Respuesta subjetiva | Cómo percibe la persona su voz | ΔF (fatiga, EVA), ΔE (esfuerzo, Borg CR10 adaptada), sequedad, molestia |
 | Respuesta acústica | Si cambió objetivamente la señal vocal | ΔCPPS, ΔHNR, ΔF0 y otras |
 
 La salida se denomina **«Cambio acústico PRE–POST»**, nunca «fatiga»: un cambio acústico no equivale a fatiga, y puede haber fatiga sin cambio acústico detectable. Los valores se muestran de forma descriptiva y sin puntos de corte clínicos durante la fase experimental.
@@ -915,9 +915,32 @@ La salida se denomina **«Cambio acústico PRE–POST»**, nunca «fatiga»: un 
 
 En PRE y en POST se repite exactamente lo mismo: las mismas preguntas, la misma vocal, el mismo texto, el mismo celular y micrófono, la misma distancia y postura boca–micrófono, y el mismo algoritmo.
 
-1. EVA 0-100 de fatiga, esfuerzo, molestia y sequedad.
-2. Vocal /a/ sostenida, cómoda, a tono y volumen habituales: toma de 5 s.
-3. Lectura del texto estándar en voz de clase: toma de 25 s. El texto lleva unos 20 s y el silencio final se descarta como pausa.
+1. Vocal /a/ sostenida, cómoda, a tono y volumen habituales: toma de 5 s.
+2. Lectura del texto estándar en voz de clase: toma de 25 s. El texto lleva unos 20 s y el silencio final se descarta como pausa.
+3. Esfuerzo para producir la voz: escala Borg CR10 adaptada (abajo).
+4. Cansancio de la voz: EVA 0–100, de «Voz completamente descansada» a «Máximo cansancio vocal imaginable».
+5. Sequedad de la garganta (EVA 0–100, de «Garganta nada seca / bien hidratada» a «Máxima sequedad imaginable») y molestia o irritación en la garganta (EVA 0–100, de «Ninguna molestia / Nada en absoluto» a «Máxima molestia imaginable»).
+
+Las preguntas siguen el protocolo del proyecto (guion del evaluador y hoja de respuesta): se responden una vez por momento, después de las dos tareas, en ese orden y con su consigna en pantalla cada vez. La consigna del esfuerzo dice que se califica cuánto cuesta emitir el sonido, no qué tan fuerte suena la voz ni el cansancio general; la de la fatiga pide dejar de lado el esfuerzo recién calificado.
+
+**Esfuerzo (Borg CR10 adaptada).** La persona elige una de diez frases, sin ver números, y la app guarda el valor de la clave del protocolo:
+
+| Frase | Valor |
+|---|---|
+| Ningún esfuerzo / Nada en absoluto | 0 |
+| Extremadamente ligero (apenas perceptible) | 0,5 |
+| Muy ligero | 1 |
+| Ligero | 2 |
+| Moderado | 3 |
+| Algo fuerte | 4 |
+| Fuerte | 5 |
+| Muy fuerte | 7 |
+| Extremadamente fuerte | 9 |
+| Esfuerzo máximo absoluto | 10 |
+
+Es una adaptación de la Borg CR10: en la original, «extremadamente fuerte» vale 10 y el máximo absoluto queda por encima de 10. Las distancias entre frases no son iguales, a propósito; el número sale de la clave. La clave en papel admite 6 y 8 cuando la persona expresa un esfuerzo intermedio; la app ofrece solo las diez frases de la hoja de respuesta, así que en la app no aparecen, pero un registro cargado desde papel los puede tener. ΔEsfuerzo = CR10 POST − CR10 PRE.
+
+**Familiarización.** Antes de la primera toma PRE en un celular, la vista docente muestra una sola vez los tres ejemplos de referencia del esfuerzo (extremadamente ligero, moderado y máximo absoluto) y pide tocar «Entendido» para seguir.
 
 Cada toma empieza con 1 s de silencio, que sirve de referencia de ruido. El micrófono debe estar conectado y libre: la toma no se puede hacer mientras se mide la jornada.
 
@@ -960,7 +983,7 @@ Las tomas rechazadas no se guardan. Las tomas con advertencia se guardan con esa
 
 ### 23.5 Datos y exportación
 
-Las EVA y los resultados se guardan en el navegador durante el día, para que el PRE de la mañana siga disponible en el POST. Al guardar la jornada pasan al registro `vd-des-workday/1`, en el campo `assessment`; la fatiga sigue en `fatigue`. El botón «Exportar evaluación (CSV)» genera el registro VD-DES `VOICE_ACOUSTIC_ASSESSMENT`, con una fila por momento (PRE/POST) y tarea (VOWEL/SPEECH). Cada fila incluye las medidas, la calidad de señal, la versión del algoritmo, los parámetros de pitch y cepstrales, la frecuencia de muestreo, el micrófono, la calibración, `audio_retained`, el LTAS y el cepstro medio.
+El esfuerzo, las EVA y los resultados se guardan en el navegador durante el día, para que el PRE de la mañana siga disponible en el POST. Al guardar la jornada pasan al registro `vd-des-workday/1`, en el campo `assessment`: `effortBorg` (`pre` y `post`, valores de la clave o `null`), `vas` con `dryness` y `discomfort`, y los resultados; la fatiga sigue en `fatigue`. Los registros anteriores a la escala Borg tienen el esfuerzo como EVA 0–100 en `assessment.vas.effort`: siguen siendo válidos, pero no se comparan con `effortBorg`, porque son escalas distintas. Un estado del día guardado antes del cambio descarta su EVA de esfuerzo al recargarse. El CSV de resúmenes agrega `effort_borg_pre`, `effort_borg_post`, `dryness_pre`, `dryness_post`, `discomfort_pre` y `discomfort_post`. El botón «Exportar evaluación (CSV)» genera el registro VD-DES `VOICE_ACOUSTIC_ASSESSMENT`, con una fila por momento (PRE/POST) y tarea (VOWEL/SPEECH). Cada fila incluye las medidas, la calidad de señal, la versión del algoritmo, los parámetros de pitch y cepstrales, la frecuencia de muestreo, el micrófono, la calibración, `audio_retained`, el LTAS y el cepstro medio.
 
 ### 23.6 Validez y uso científico
 

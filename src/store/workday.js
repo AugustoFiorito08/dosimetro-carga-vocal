@@ -6,7 +6,7 @@
 // the PRE/POST voice assessment (VAS and acoustic measures; spec §23).
 import { describe } from '../stats/descriptive.js';
 import { SCORE_DOSES } from '../ui/score-series.js';
-import { TASKS, TIMEPOINTS, retainsAudio } from './voice-assessment.js';
+import { BORG_VALUES, TASKS, TIMEPOINTS, retainsAudio } from './voice-assessment.js';
 import { RECOVERY_POINT_FIELDS, RECOVERY_SLOTS } from './recovery.js';
 import { validateSecondSeries } from './second-series.js';
 
@@ -127,6 +127,11 @@ function validateAssessment(a) {
   for (const [item, { pre, post }] of Object.entries(a.vas ?? {})) {
     validateVas(`assessment.vas.${item}.pre`, pre ?? null);
     validateVas(`assessment.vas.${item}.post`, post ?? null);
+  }
+  // Records before the Borg scale have no effortBorg (their effort is a VAS in assessment.vas).
+  for (const tp of ['pre', 'post']) {
+    const v = a.effortBorg?.[tp] ?? null;
+    if (v !== null && !BORG_VALUES.includes(v)) throw new RangeError(`assessment.effortBorg.${tp} must be a Borg CR10 value (${BORG_VALUES.join(', ')}) or null, got ${v}`);
   }
   for (const r of a.results ?? []) {
     if (!TIMEPOINTS.includes(r.timepoint) || !TASKS.includes(r.task)) throw new RangeError(`assessment result needs a PRE/POST timepoint and a VOWEL/SPEECH task`);

@@ -5,6 +5,7 @@
 import { MODES } from '../../audio/session-controller.js';
 import { splFromPressure } from '../../dsp/acoustic-calibration.js';
 import { describe } from '../../stats/descriptive.js';
+import { BORG_SCALE } from '../../store/voice-assessment.js';
 import { validateCode } from '../../store/workday.js';
 import { EVENT_LABELS } from '../boards/views.js';
 import { comparisonText, nextTeacherStep, personalComparison } from './teacher-model.js';
@@ -13,7 +14,14 @@ const PREP_STEPS = [
   ['codes', 'Datos'], ['microphone', 'Micrófono'], ['ambient', 'Silencio'],
   ['enrol', 'Tu voz'], ['reference', 'Voz habitual'], ['pre', 'Antes'],
 ];
-const VAS_ITEMS = [['fatigue', 'Fatiga vocal'], ['effort', 'Esfuerzo al hablar'], ['discomfort', 'Molestia'], ['dryness', 'Sequedad']];
+/** VAS of the protocol with the words of each end of the line (response sheet). */
+const VAS_ITEMS = {
+  fatigue: { label: 'Cansancio de la voz', low: 'Voz completamente descansada', high: 'Máximo cansancio vocal imaginable' },
+  dryness: { label: 'Sequedad de la garganta', low: 'Garganta nada seca / bien hidratada', high: 'Máxima sequedad imaginable' },
+  discomfort: { label: 'Molestia o irritación en la garganta', low: 'Ninguna molestia / Nada en absoluto', high: 'Máxima molestia imaginable' },
+};
+/** Set once the teacher has read the three effort examples (familiarization before the first PRE). */
+const FAMILIARIZED_KEY = 'dosimetro.borg-familiarized';
 const vasInputId = (timepoint, item) => (item === 'fatigue' ? `jr-${timepoint}` : `va-${timepoint}-${item}`);
 const TASK_LABELS = { [MODES.CALIBRATING]: 'Silencio…', [MODES.REFERENCING]: 'Leé con tu voz habitual' };
 const VIEW_KEY = 'dosimetro.view';
@@ -107,13 +115,14 @@ export function createTeacherApp(deps) {
 
   for (const list of root.querySelectorAll('.t-vas-list')) {
     const timepoint = list.dataset.timepoint;
-    for (const [item, label] of VAS_ITEMS) {
+    for (const item of list.dataset.items.split(',')) {
+      const { label, low, high } = VAS_ITEMS[item];
       const original = $(vasInputId(timepoint, item));
       const row = document.createElement('label');
       row.className = 't-vas';
       row.innerHTML = `<span class="t-vas-head"><span>${label}</span><output>—</output></span>
-        <input type="range" min="0" max="100" step="1" value="0" />
-        <span class="t-vas-scale"><span>0 · nada</span><span>100 · lo máximo</span></span>`;
+        <input type="range" min="0" max="100" step="1" value="0" aria-label="${label}" />
+        <span class="t-vas-scale"><span>${low}</span><span>${high}</span></span>`;
       const range = row.querySelector('input');
       const output = row.querySelector('output');
       const sync = () => {
@@ -132,6 +141,33 @@ export function createTeacherApp(deps) {
       list.append(row);
     }
   }
+  // Vocal effort: the ten phrases, no numbers; the choice goes to the technical view's select,
+  // which holds the value of the protocol key (single source of truth, like the VAS).
+  for (const box of root.querySelectorAll('.t-borg')) {
+    const timepoint = box.dataset.borg;
+    const original = $(`va-${timepoint}-borg`);
+    for (const option of BORG_SCALE) {
+      const row = document.createElement('label');
+      row.className = 't-borg-option';
+      row.innerHTML = `<input type="radio" name="t-borg-${timepoint}" value="${option.value}" /><span>${option.label}</span>`;
+      row.querySelector('input').addEventListener('change', () => {
+        original.value = String(option.value);
+        original.dispatchEvent(new Event('change'));
+      });
+      box.append(row);
+    }
+    const sync = () => {
+      for (const radio of box.querySelectorAll('input')) radio.checked = radio.value === original.value;
+    };
+    original.addEventListener('change', sync);
+    sync();
+  }
+  const familiarization = q('[data-familiarization]');
+  const familiarized = () => {
+    try { return globalThis.localStorage?.getItem(FAMILIARIZED_KEY) === '1'; } catch { return ui.familiarized === true; }
+  };
+  familiarization.hidden = familiarized();
+
   const fatigueSet = (timepoint) => $(`jr-${timepoint}`).value.trim() !== '';
 
   // ---------- toast ----------
@@ -182,8 +218,14 @@ export function createTeacherApp(deps) {
     enrol: () => run(actions.enrollSpeaker, enrolResult),
     'enrol-accept': () => { ui.enrolAccepted = true; },
     reference: () => run(actions.takeReference, 'Listo: tu voz habitual quedó registrada.'),
+    familiarized: () => {
+      ui.familiarized = true;
+      try { globalThis.localStorage?.setItem(FAMILIARIZED_KEY, '1'); } catch { /* storage unavailable */ }
+      familiarization.hidden = true;
+    },
     pre: () => {
-      if (!fatigueSet('pre')) return toast('Marcá al menos la fatiga vocal antes de empezar.', 'error');
+      if (!familiarized() && !ui.familiarized) return toast('Leé los tres ejemplos de esfuerzo y tocá «Entendido».', 'error');
+      if (!fatigueSet('pre')) return toast('Marcá al menos el cansancio de la voz antes de empezar.', 'error');
       if (!deps.samplesDone('PRE')) return toast('Grabá la vocal /a/ y la lectura del texto antes de empezar.', 'error');
       ui.preConfirmed = true;
     },
@@ -201,7 +243,7 @@ export function createTeacherApp(deps) {
       if (globalThis.confirm('¿Finalizar la jornada? Después vas a registrar cómo quedó tu voz.')) actions.finishSession();
     },
     save: () => {
-      if (!fatigueSet('post')) return toast('Marcá al menos la fatiga vocal para guardar la jornada.', 'error');
+      if (!fatigueSet('post')) return toast('Marcá al menos el cansancio de la voz para guardar la jornada.', 'error');
       if (!deps.samplesDone('POST')) return toast('Grabá la vocal /a/ y la lectura del texto para guardar la jornada.', 'error');
       return run(async () => {
         const workday = await actions.saveWorkday();

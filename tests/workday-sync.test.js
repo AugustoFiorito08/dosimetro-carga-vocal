@@ -205,6 +205,16 @@ describe('own-voice reference and capture settings in the sync contract', () => 
   });
 });
 
+describe('Borg CR10 effort in the sync contract', () => {
+  it('travels inside the assessment and the JSON schema bounds it to 0-10', () => {
+    const w = workday();
+    const record = toSyncRecord({ ...w, assessment: { ...w.assessment, effortBorg: { pre: 2, post: 7 } } });
+    assert.deepEqual(record.assessment.effortBorg, { pre: 2, post: 7 });
+    const borg = WORKDAY_SYNC_JSON_SCHEMA.properties.assessment.properties.effortBorg;
+    assert.deepEqual(borg.properties.pre, { type: ['number', 'null'], enum: [0, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, null] });
+  });
+});
+
 describe('per-second series in the workday and the sync contract (perSecond)', () => {
   const series = (seconds, { phonation = (k) => (k % 3 ? 1 : 0), f0I = (k) => (k % 3 ? 270 : 0) } = {}) => {
     const s = createSecondSeries();

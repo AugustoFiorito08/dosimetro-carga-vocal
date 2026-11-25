@@ -55,6 +55,19 @@ describe('dashboard views', () => {
   });
 });
 
+describe('summaries CSV: Borg effort and throat VAS', () => {
+  it('adds effort (Borg CR10), dryness and discomfort PRE and POST', () => {
+    const [w] = generateDemoWorkdays({ seed: 7 });
+    const withScales = { ...w, assessment: { textId: 'x', vas: { dryness: { pre: 10, post: 30 }, discomfort: { pre: 0, post: 15 } }, effortBorg: { pre: 2, post: 7 }, results: [] } };
+    const [head, row] = summariesCsv([withScales]).trim().split('\r\n');
+    const cols = head.split(',');
+    const cell = (c) => row.split(',')[cols.indexOf(c)];
+    assert.deepEqual(['effort_borg_pre', 'effort_borg_post', 'dryness_pre', 'dryness_post', 'discomfort_pre', 'discomfort_post'].map(cell), ['2', '7', '10', '30', '0', '15']);
+    const [, plain] = summariesCsv([{ ...w, assessment: null }]).trim().split('\r\n');
+    assert.equal(plain.split(',')[cols.indexOf('effort_borg_pre')], '');
+  });
+});
+
 describe('recomputation from the per-second series (Analítica)', () => {
   const demo = generateDemoWorkdays({ seed: 7 }).slice(0, 12);
   const series = (block) => {

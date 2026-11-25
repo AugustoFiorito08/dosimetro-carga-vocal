@@ -3,7 +3,7 @@
 // envelope and their validation, usable on both ends (the browser builds, the backend
 // checks). The envelope is the JSON export one (vd-des-workdays/1), so a manual export and
 // a sync carry the same format and either can be loaded the same way.
-import { MAX_DERIVED_VALUES } from './voice-assessment.js';
+import { BORG_VALUES, MAX_DERIVED_VALUES } from './voice-assessment.js';
 import { RECOVERY_SLOTS } from './recovery.js';
 import { MAX_SERIES_SECONDS } from './second-series.js';
 import {
@@ -246,6 +246,10 @@ export const WORKDAY_SYNC_JSON_SCHEMA = Object.freeze({
       properties: {
         textId: { type: 'string' },
         vas: { type: 'object', additionalProperties: { type: 'object', properties: { pre: vas, post: vas } } },
+        effortBorg: {
+          type: 'object',
+          properties: { pre: { type: ['number', 'null'], enum: [...BORG_VALUES, null] }, post: { type: ['number', 'null'], enum: [...BORG_VALUES, null] } },
+        },
         results: {
           type: 'array',
           maxItems: 4,

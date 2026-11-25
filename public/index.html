@@ -82,8 +82,17 @@
 
         <section class="t-screen" data-screen="pre" aria-labelledby="t-pre-title">
           <h2 id="t-pre-title">¿Cómo está tu voz ahora?</h2>
-          <p class="t-lead">Antes de empezar. Mové cada barra: 0 = nada, 100 = lo máximo que te puedas imaginar.</p>
-          <div class="t-vas-list" data-timepoint="pre"></div>
+          <p class="t-lead">Antes de empezar: primero las pruebas de voz y después cuatro preguntas sobre cómo la sentís.</p>
+          <div class="t-familiarization" data-familiarization hidden>
+            <h3>Antes de la primera vez</h3>
+            <p class="t-consigna">Para ayudarte a ubicar tus sensaciones en la lista, pensá en estas tres situaciones cotidianas:</p>
+            <ul class="t-examples">
+              <li><strong>Ejemplo de esfuerzo EXTREMADAMENTE LIGERO:</strong> Es como decir un 'hola' suave cuando estás al lado de alguien en un lugar silencioso. El aire pasa solo y casi no te cuesta nada que salga el sonido.</li>
+              <li><strong>Ejemplo de esfuerzo MODERADO:</strong> Es como explicar un tema durante varios minutos en una sala amplia o conversar en un lugar con ruido de fondo. Sentís que tenés que sostener el aire y proyectar la voz para que te escuchen bien, pero lo hacés con control y sin forzar la garganta.</li>
+              <li><strong>Ejemplo de esfuerzo MÁXIMO ABSOLUTO:</strong> Es como intentar gritarle una advertencia a alguien que está cruzando una avenida muy ruidosa, cuando sentís que tenés que empujar con todo lo que tenés desde el pecho y la garganta para que salga apenas un hilo de voz.</li>
+            </ul>
+            <button type="button" class="t-btn secondary" data-action="familiarized">Entendido</button>
+          </div>
           <div class="t-voice-tests">
             <h3>Pruebas de voz</h3>
             <p class="t-hint">Son el dato objetivo de cómo está tu voz. Mismo celular, misma distancia y misma postura que al terminar. Se analizan en el momento y el audio se borra.</p>
@@ -92,6 +101,28 @@
             <blockquote class="t-text va-text-body"></blockquote>
             <button type="button" class="t-btn secondary" data-click="va-pre-speech">Leer el texto (25 s)</button>
             <p class="t-hint" data-mirror-text="va-pre-status"></p>
+          </div>
+          <div class="t-scale">
+            <h3>Esfuerzo para producir la voz</h3>
+            <p class="t-consigna">Vamos a usar esta lista de descripciones para medir cuánto esfuerzo te demanda producir tu voz en este momento.</p>
+            <p class="t-consigna">No califiques qué tan fuerte o despacio suena tu voz, ni si te sentís cansado en general; enfocate únicamente en cuánto te cuesta emitir el sonido mientras hablás.</p>
+            <p class="t-consigna">Arriba de todo está la sensación de que la voz sale sin ningún esfuerzo, y abajo de todo está el mayor esfuerzo vocal que puedas imaginar, como intentar gritar en un lugar muy ruidoso cuando casi no te sale la voz.</p>
+            <p class="t-consigna">Cada vez que termines una tarea, leé las opciones de esta lista y señalame o decime la frase que mejor describa el esfuerzo que hiciste para producir la voz en ese instante.</p>
+            <fieldset class="t-borg" data-borg="pre"><legend class="visually-hidden">Esfuerzo para producir la voz</legend></fieldset>
+          </div>
+          <div class="t-scale">
+            <h3>Cansancio de la voz</h3>
+            <p class="t-consigna">Ahora, dejando de lado cuánto te costó emitir el sonido recién, vamos a medir qué tan cansada sentís tu voz o tu garganta en este momento.</p>
+            <p class="t-consigna">En esta línea, el extremo izquierdo significa que tu voz está completamente descansada y fresca, como al empezar el día; el extremo derecho representa el mayor cansancio vocal que hayas sentido alguna vez, como después de hablar o gritar durante horas sin parar.</p>
+            <p class="t-consigna">Hacé una marca vertical sobre la línea en el punto que mejor refleje qué tan cansada sentís tu voz ahora.</p>
+            <div class="t-vas-list" data-timepoint="pre" data-items="fatigue"></div>
+          </div>
+          <div class="t-scale">
+            <h3>Sequedad y molestia de la garganta</h3>
+            <p class="t-consigna">Por último, marcá en estas dos líneas qué tan seca y qué tan molesta sentís tu garganta en este instante.</p>
+            <p class="t-consigna">En la primera línea, el extremo izquierdo significa que tenés la garganta completamente hidratada y lubricada, y el extremo derecho representa la mayor sequedad que hayas sentido alguna vez.</p>
+            <p class="t-consigna">En la segunda línea, el extremo izquierdo significa que no sentís ninguna molestia, irritación o dolor leve, y el extremo derecho representa la mayor molestia o irritación de garganta imaginable.</p>
+            <div class="t-vas-list" data-timepoint="pre" data-items="dryness,discomfort"></div>
           </div>
           <button type="button" class="t-btn" data-action="pre">Continuar</button>
         </section>
@@ -137,8 +168,7 @@
 
         <section class="t-screen" data-screen="post" aria-labelledby="t-post-title">
           <h2 id="t-post-title">Jornada finalizada</h2>
-          <p class="t-lead">¿Cómo está tu voz ahora? 0 = nada, 100 = lo máximo que te puedas imaginar.</p>
-          <div class="t-vas-list" data-timepoint="post"></div>
+          <p class="t-lead">Igual que al empezar: primero las pruebas de voz y después las cuatro preguntas.</p>
           <div class="t-voice-tests">
             <h3>Pruebas de voz</h3>
             <p class="t-hint">Igual que al empezar: mismo celular, misma distancia y misma postura.</p>
@@ -147,6 +177,28 @@
             <blockquote class="t-text va-text-body"></blockquote>
             <button type="button" class="t-btn secondary" data-click="va-post-speech">Leer el texto (25 s)</button>
             <p class="t-hint" data-mirror-text="va-post-status"></p>
+          </div>
+          <div class="t-scale">
+            <h3>Esfuerzo para producir la voz</h3>
+            <p class="t-consigna">Vamos a usar esta lista de descripciones para medir cuánto esfuerzo te demanda producir tu voz en este momento.</p>
+            <p class="t-consigna">No califiques qué tan fuerte o despacio suena tu voz, ni si te sentís cansado en general; enfocate únicamente en cuánto te cuesta emitir el sonido mientras hablás.</p>
+            <p class="t-consigna">Arriba de todo está la sensación de que la voz sale sin ningún esfuerzo, y abajo de todo está el mayor esfuerzo vocal que puedas imaginar, como intentar gritar en un lugar muy ruidoso cuando casi no te sale la voz.</p>
+            <p class="t-consigna">Cada vez que termines una tarea, leé las opciones de esta lista y señalame o decime la frase que mejor describa el esfuerzo que hiciste para producir la voz en ese instante.</p>
+            <fieldset class="t-borg" data-borg="post"><legend class="visually-hidden">Esfuerzo para producir la voz</legend></fieldset>
+          </div>
+          <div class="t-scale">
+            <h3>Cansancio de la voz</h3>
+            <p class="t-consigna">Ahora, dejando de lado cuánto te costó emitir el sonido recién, vamos a medir qué tan cansada sentís tu voz o tu garganta en este momento.</p>
+            <p class="t-consigna">En esta línea, el extremo izquierdo significa que tu voz está completamente descansada y fresca, como al empezar el día; el extremo derecho representa el mayor cansancio vocal que hayas sentido alguna vez, como después de hablar o gritar durante horas sin parar.</p>
+            <p class="t-consigna">Hacé una marca vertical sobre la línea en el punto que mejor refleje qué tan cansada sentís tu voz ahora.</p>
+            <div class="t-vas-list" data-timepoint="post" data-items="fatigue"></div>
+          </div>
+          <div class="t-scale">
+            <h3>Sequedad y molestia de la garganta</h3>
+            <p class="t-consigna">Por último, marcá en estas dos líneas qué tan seca y qué tan molesta sentís tu garganta en este instante.</p>
+            <p class="t-consigna">En la primera línea, el extremo izquierdo significa que tenés la garganta completamente hidratada y lubricada, y el extremo derecho representa la mayor sequedad que hayas sentido alguna vez.</p>
+            <p class="t-consigna">En la segunda línea, el extremo izquierdo significa que no sentís ninguna molestia, irritación o dolor leve, y el extremo derecho representa la mayor molestia o irritación de garganta imaginable.</p>
+            <div class="t-vas-list" data-timepoint="post" data-items="dryness,discomfort"></div>
           </div>
           <button type="button" class="t-btn" data-action="save">Guardar la jornada</button>
         </section>
@@ -297,19 +349,19 @@
             <p class="hint">Evaluación vocal: mismo celular, misma distancia a la boca y misma postura en PRE y POST. Cada muestra empieza con 1 s de silencio. Se analiza en el momento y el audio se borra: no se guarda ninguna grabación.</p>
             <fieldset class="assessment" id="va-pre">
               <legend>Evaluación vocal PRE (antes de la jornada)</legend>
-              <div class="vas-grid">
-                <label class="vas">Fatiga<input id="jr-pre" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
-                <label class="vas">Esfuerzo<input id="va-pre-effort" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
-                <label class="vas">Molestia<input id="va-pre-discomfort" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
-                <label class="vas">Sequedad<input id="va-pre-dryness" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
-              </div>
-              <p class="hint">EVA 0-100: 0 = nada, 100 = lo máximo imaginable.</p>
               <div class="row">
                 <button id="va-pre-vowel" type="button" class="btn" disabled>/a/ sostenida (5 s)</button>
                 <button id="va-pre-speech" type="button" class="btn" disabled>Texto (25 s)</button>
               </div>
               <details class="va-text"><summary>Texto a leer</summary><blockquote class="va-text-body"></blockquote></details>
               <p class="hint" id="va-pre-status">Sin muestras.</p>
+              <label class="borg">Esfuerzo (Borg CR10)<select id="va-pre-borg" data-borg-select></select></label>
+              <div class="vas-grid">
+                <label class="vas">Fatiga<input id="jr-pre" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+                <label class="vas">Sequedad<input id="va-pre-dryness" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+                <label class="vas">Molestia<input id="va-pre-discomfort" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+              </div>
+              <p class="hint">Después de las pruebas de voz: esfuerzo (frase de la escala Borg CR10 del protocolo) y EVA 0-100 de fatiga (descansada → máximo cansancio), sequedad (hidratada → máxima sequedad) y molestia (ninguna → máxima).</p>
             </fieldset>
             <div class="row">
               <label class="visually-hidden" for="jr-event-type">Tipo de evento</label>
@@ -325,19 +377,19 @@
             <p class="hint" id="jr-events">Sin eventos marcados.</p>
             <fieldset class="assessment" id="va-post">
               <legend>Evaluación vocal POST (al terminar)</legend>
-              <div class="vas-grid">
-                <label class="vas">Fatiga<input id="jr-post" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
-                <label class="vas">Esfuerzo<input id="va-post-effort" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
-                <label class="vas">Molestia<input id="va-post-discomfort" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
-                <label class="vas">Sequedad<input id="va-post-dryness" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
-              </div>
-              <p class="hint">EVA 0-100: 0 = nada, 100 = lo máximo imaginable.</p>
               <div class="row">
                 <button id="va-post-vowel" type="button" class="btn" disabled>/a/ sostenida (5 s)</button>
                 <button id="va-post-speech" type="button" class="btn" disabled>Texto (25 s)</button>
               </div>
               <details class="va-text"><summary>Texto a leer</summary><blockquote class="va-text-body"></blockquote></details>
               <p class="hint" id="va-post-status">Sin muestras.</p>
+              <label class="borg">Esfuerzo (Borg CR10)<select id="va-post-borg" data-borg-select></select></label>
+              <div class="vas-grid">
+                <label class="vas">Fatiga<input id="jr-post" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+                <label class="vas">Sequedad<input id="va-post-dryness" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+                <label class="vas">Molestia<input id="va-post-discomfort" type="number" min="0" max="100" step="1" inputmode="numeric" /></label>
+              </div>
+              <p class="hint">Después de las pruebas de voz: esfuerzo (frase de la escala Borg CR10 del protocolo) y EVA 0-100 de fatiga (descansada → máximo cansancio), sequedad (hidratada → máxima sequedad) y molestia (ninguna → máxima).</p>
             </fieldset>
             <div class="va-results">
               <h3 class="va-results-title">Cambio acústico PRE–POST</h3>

@@ -385,11 +385,14 @@ export function recomputeBody(workdays, state) {
 export function summariesCsv(workdays) {
   const cols = ['id', 'participantId', 'schoolId', 'classroom', 'date', 'durationS', 'phonationS', 'validRatio',
     'd_0', 'd_l', 'd_p', 'd_e', 'd_s', 'd_d', 'd_t', 'd_c', 'hMax', 'f0_p50', 'level_p50', 'units', 'fatigue_pre', 'fatigue_post', 'source', 'algorithmVersion', 'own_voice_ref_dbfs',
-    'recovery_points', 'recovery_t50_min', 'recovery_t90_min', 'recovery_auc_f', 'recovery_horizon_min'];
+    'recovery_points', 'recovery_t50_min', 'recovery_t90_min', 'recovery_auc_f', 'recovery_horizon_min',
+    'effort_borg_pre', 'effort_borg_post', 'dryness_pre', 'dryness_post', 'discomfort_pre', 'discomfort_post'];
   const cell = (v) => (v === null || v === undefined || (typeof v === 'number' && !Number.isFinite(v)) ? '' : /[",\r\n]/.test(String(v)) ? `"${String(v).replaceAll('"', '""')}"` : String(v));
   const rows = workdays.map((w) => [w, recoveryIndices({ pre: w.fatigue.pre, post: w.fatigue.post, points: w.fatigue.recovery ?? [] })]).map(([w, r]) => [w.id, w.participantId, w.schoolId, w.classroom, w.date, w.durationS, w.phonationS, w.validRatio,
     w.doses.none, w.doses.linear, w.doses.power, w.doses.exponential, w.doses.saturating, w.doses.distance, w.doses.time, w.doses.cycle,
     w.hMax, w.f0?.p50, w.level?.p50, w.units, w.fatigue.pre, w.fatigue.post, w.source, w.algorithmVersion, w.ownVoiceRefDbfs,
-    (w.fatigue.recovery ?? []).length, r.t50Min, r.t90Min, r.aucF, r.horizonMin].map(cell).join(','));
+    (w.fatigue.recovery ?? []).length, r.t50Min, r.t90Min, r.aucF, r.horizonMin,
+    w.assessment?.effortBorg?.pre, w.assessment?.effortBorg?.post, w.assessment?.vas?.dryness?.pre, w.assessment?.vas?.dryness?.post,
+    w.assessment?.vas?.discomfort?.pre, w.assessment?.vas?.discomfort?.post].map(cell).join(','));
   return [cols.join(','), ...rows].join('\r\n') + '\r\n';
 }
