@@ -98,7 +98,7 @@ export function recomputeWorkdays(workdays, params = {}) {
 
 /**
  * Each recomputed model against the outcome, next to D0: Spearman ρ with the outcome value,
- * the ROC AUC (95 % CI) for the case rule and its difference with D0's AUC.
+ * the ROC curve and AUC (95 % CI) for the case rule, and the AUC difference with D0.
  */
 export function compareModels(entries, outcomeKey, threshold) {
   const values = entries.map((e) => outcomeValue(e.workday, outcomeKey));
@@ -107,7 +107,7 @@ export function compareModels(entries, outcomeKey, threshold) {
   for (const m of RECOMPUTED_MODELS) {
     const doses = entries.map((e) => e.doses[m]);
     const roc = rocCurve(doses, labels);
-    models[m] = { rho: spearman(doses, values), auc: roc.auc, ci: roc.ci };
+    models[m] = { rho: spearman(doses, values), auc: roc.auc, ci: roc.ci, points: roc.points };
   }
   for (const m of RECOMPUTED_MODELS) models[m].deltaAuc = models[m].auc - models.none.auc;
   return {

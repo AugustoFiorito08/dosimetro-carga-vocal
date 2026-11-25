@@ -83,6 +83,27 @@ describe('recomputation from the per-second series (Analítica)', () => {
     assert.deepEqual(days, before);
   });
 
+  it('draws exploratory dose-response and ROC curves from the recomputed doses, apart from the main ones', () => {
+    const days = demo.map((w, i) => (i < 8 ? { ...w, perSecond: series(10 + 20 * i) } : w));
+    const html = recomputeBody(days, { outcome: 'deltaF', recomputeModel: 'saturating' });
+    assert.match(html, /Curva dosis-respuesta exploratoria \(DS · saturante\)/);
+    assert.match(html, /Curvas ROC exploratorias/);
+    assert.match(html, /n = \d+ · R² = /);
+    assert.equal((html.match(/<svg/g) ?? []).length, 2);
+    assert.match(html, /no cambia las curvas, el corte de Youden ni los niveles de acción de arriba/);
+    assert.match(recomputeBody(days, { outcome: 'deltaF' }), /exploratoria \(DL · lineal\)/, 'the linear model by default');
+  });
+
+  it('leaves the main curves on the stored doses whatever the sliders say', () => {
+    const days = demo.map((w, i) => (i < 8 ? { ...w, perSecond: series(10 + 20 * i) } : w));
+    const root = (state) => {
+      const node = { innerHTML: '' };
+      renderAnalytics(node, days, { dose: 'linear', outcome: 'deltaF', caseThreshold: 20, ...state });
+      return node.innerHTML.replace(/<section class="panel board-panel span-2"><h2>Recálculo desde la serie por segundo[\s\S]*?<\/section>/, '');
+    };
+    assert.equal(root({}), root({ 'recompute:beta': '0.1', 'recompute:alphaL': '0.1' }));
+  });
+
   it('keeps every parameter inside its range, with the initial values by default', () => {
     assert.deepEqual(recomputeState({}), { beta: 0.03, alphaL: 0.05, a: 1, p: 2, alphaE: 0.025, A: 3, kH: 40 });
     const clamped = recomputeState({ 'recompute:beta': '9', 'recompute:alphaL': '-1', 'recompute:kH': '500', 'recompute:a': 'x' });

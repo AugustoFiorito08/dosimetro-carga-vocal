@@ -67,7 +67,7 @@ export function createBoards({ roots, bar, repository, download, say, reminders 
 
   for (const [tab, root] of Object.entries(roots)) {
     root.addEventListener('change', (event) => {
-      if (event.target.dataset?.param === 'recomputeWorkday') return void recompute(event);
+      if (event.target.dataset?.param && event.target.tagName === 'SELECT') return void recompute(event);
       const key = event.target.dataset?.filter;
       if (!key) return;
       const { min, max } = event.target;

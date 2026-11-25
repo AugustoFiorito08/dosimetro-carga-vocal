@@ -334,11 +334,15 @@ function recomputePanel(workdays, state) {
   const groups = RECOMPUTE_GROUPS.map((g) => `<fieldset class="recompute-group"><legend>${g.title}</legend>${g.params.map(([name, label, unit]) => slider(name, label, unit, values[name])).join('')}${g.note ? `<span class="hint">${g.note}</span>` : ''}</fieldset>`).join('');
   const controls = withSeries.length
     ? `<div class="recompute-controls">${groups}</div>
-      <div class="board-filters"><label>Jornada <select data-param="recomputeWorkday">${withSeries.map((w) => `<option value="${esc(w.id)}"${w.id === state.recomputeWorkday ? ' selected' : ''}>${esc(w.participantId)} · ${dayLabel(w.date)} · ${clock(w.startedAt)}</option>`).join('')}</select></label>
+      <div class="board-filters"><label>Modelo de la curva <select data-param="recomputeModel">${RECOMPUTED_MODELS.map((m) => `<option value="${m}"${m === curveModel(state) ? ' selected' : ''}>${DOSE_LABELS[m]}</option>`).join('')}</select></label>
+      <label>Jornada <select data-param="recomputeWorkday">${withSeries.map((w) => `<option value="${esc(w.id)}"${w.id === state.recomputeWorkday ? ' selected' : ''}>${esc(w.participantId)} · ${dayLabel(w.date)} · ${clock(w.startedAt)}</option>`).join('')}</select></label>
       <button type="button" class="btn" data-action="recompute-reset">Volver a los valores iniciales</button></div>`
     : '';
   return panel('Recálculo desde la serie por segundo', `${controls}<div data-recompute-body>${recomputeBody(workdays, state)}</div>`, 'span-2');
 }
+
+/** Model drawn in the exploratory dose-response curve (linear by default). */
+const curveModel = (state) => (RECOMPUTED_MODELS.includes(state.recomputeModel) ? state.recomputeModel : 'linear');
 
 /** Body of the recomputation panel, re-rendered alone while a parameter moves. */
 export function recomputeBody(workdays, state) {
@@ -365,7 +369,15 @@ export function recomputeBody(workdays, state) {
   const d0 = selected.doses.none;
   const day = `<table class="stats"><thead><tr><th>Modelo</th><th>Dosis recalculada</th><th>× D0</th></tr></thead><tbody>${RECOMPUTED_MODELS.map((m) => `<tr><th scope="row">${name(m)}</th><td class="num">${compact(selected.doses[m])} u</td><td class="num">${d0 > 0 ? fmt(selected.doses[m] / d0, 2) : '—'}</td></tr>`).join('')}</tbody></table>
     <p class="hint">${esc(w.participantId)} · ${dayLabel(w.date)}: ΔF = ${fmt(outcomeValue(w, 'deltaF'), 0)} pts · AUC_F = ${fmt(outcomeValue(w, 'aucF'), 1)} EVA·h · T₉₀ = ${fmt(outcomeValue(w, 't90'), 0)} min.</p>`;
-  return `<div class="board-grid recompute-grid"><div><h3>${entries.length} jornadas con serie · ${esc(outcome.caseText(threshold))}</h3>${table}<p class="hint">${c.cases} casos · ${c.controls} controles. AUC aparentes, sobre la misma muestra. Un modelo con memoria solo aporta si supera a D0 de forma reproducible.</p></div><div><h3>Jornada elegida</h3>${day}</div></div>
+  const model = curveModel(state);
+  const pairs = entries.map((e) => [e.doses[model], outcomeValue(e.workday, outcomeKey)]).filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b));
+  const fit = linearRegression(pairs.map(([a]) => a), pairs.map(([, b]) => b));
+  const curves = `<div class="board-grid recompute-grid">
+    <div><h3>Curva dosis-respuesta exploratoria (${esc(DOSE_LABELS[model])})</h3>${scatterChart({ points: pairs, fit, color: MODEL_COLORS[model], xLabel: `${DOSE_LABELS[model]} recalculada (u)`, yLabel: outcome.short, label: `Dosis recalculada contra ${outcome.short}` })}<p class="hint">Regresión lineal (OLS) con banda de confianza al 95 % · n = ${fit.n} · R² = ${fmt(fit.r2, 2)} · Spearman ρ = ${fmt(c.models[model].rho, 2)}.</p></div>
+    <div><h3>Curvas ROC exploratorias (caso: ${esc(outcome.caseText(threshold))})</h3>${rocChart({ curves: RECOMPUTED_MODELS.map((m) => ({ name: DOSE_LABELS[m], points: c.models[m].points, color: MODEL_COLORS[m] })), label: 'Curvas ROC de las dosis recalculadas' })}</div>
+  </div>
+  <p class="hint">Exploratorias: solo jornadas con serie y dosis recalculadas con los valores de arriba. Mover los parámetros no cambia las curvas, el corte de Youden ni los niveles de acción de arriba, que usan las dosis guardadas. Ajustar mirando estas curvas da AUC optimistas: los valores elegidos se congelan y se validan en jornadas nuevas.</p>`;
+  return `${curves}<div class="board-grid recompute-grid"><div><h3>${entries.length} jornadas con serie · ${esc(outcome.caseText(threshold))}</h3>${table}<p class="hint">${c.cases} casos · ${c.controls} controles. AUC aparentes, sobre la misma muestra. Un modelo con memoria solo aporta si supera a D0 de forma reproducible.</p></div><div><h3>Jornada elegida</h3>${day}</div></div>
     <p class="hint">β = ${fmt(values.beta, 3)} s⁻¹ (τ = ${fmt(1 / values.beta, 0)} s) · α_L = ${fmt(values.alphaL, 3)} s⁻¹ · a = ${fmt(values.a, 2)}, p = ${fmt(values.p, 2)}, H_ref = ${FIXED_H_REF} s (fijo) · α_E = ${fmt(values.alphaE, 3)} s⁻¹ · A = ${fmt(values.A, 2)}, K_H = ${fmt(values.kH, 0)} s. Cada parámetro de forma mueve solo su modelo, y β solo la memoria. Las dosis guardadas en cada jornada no cambian; a 1 Hz las dosis con memoria difieren del cálculo por trama en torno al 1 % con β = 0,03.</p>${old}`;
 }
 

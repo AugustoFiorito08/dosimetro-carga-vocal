@@ -608,6 +608,9 @@ H_ref queda fijo en 20 s y no se ajusta, porque a, p y H_ref se compensan entre 
 
 - por modelo, sobre las jornadas con serie: rho de Spearman con el desenlace elegido, AUC con su IC 95 % y la diferencia de AUC con D₀, que es la referencia;
 - para una jornada elegida: la dosis recalculada de cada modelo, cuántas veces D₀ es, y sus ΔF, AUC_F y T₉₀.
+- curvas exploratorias: dosis-respuesta (OLS con banda al 95 %, R² y rho) del modelo elegido en «Modelo de la curva» (D_L por defecto) y ROC de los cinco modelos, con las dosis recalculadas y solo las jornadas con serie.
+
+Las curvas exploratorias están dentro del panel y separadas de las principales: la dosis-respuesta, las ROC, el corte de Youden y los niveles de acción de arriba siguen usando las dosis guardadas y no cambian al mover los parámetros. Así los umbrales provisionales no se eligen mirando el resultado. Ajustar mirando las curvas exploratorias da AUC optimistas: los valores elegidos se congelan y se validan en jornadas nuevas (documento de parámetros, §12–14).
 
 Las dosis guardadas en las jornadas no cambian: el recálculo vive solo en pantalla. Las jornadas sin serie (anteriores a ella, importadas sin ella o simuladas) se cuentan aparte, con un aviso de que no admiten recálculo; si ninguna la tiene, el panel lo dice en lugar de mostrar la tabla. A 1 Hz no se sabe cómo se repartió la voz dentro de cada segundo: frente al cálculo por trama, las dosis con memoria difieren alrededor de 0,1 % con β = 0,005, 1 % con 0,03 y 2–3 % con 0,1; D₀ coincide salvo el redondeo con que se guarda la serie. No hay tabla de juegos de parámetros ni versionado: esos valores todavía se exploran, no se congelan.
 

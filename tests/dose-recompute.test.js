@@ -133,5 +133,6 @@ describe('model comparison against D0', () => {
     for (const e of entries) near(e.doses.none, entries[0].doses.none, 1e-9); // D0 cannot tell the workdays apart
     assert.ok(c.models.linear.auc > c.models.none.auc);
     near(c.models.linear.deltaAuc, c.models.linear.auc - c.models.none.auc, 1e-12);
+    assert.ok(c.models.linear.points.length > 2, 'ROC points for the exploratory curve');
   });
 });
