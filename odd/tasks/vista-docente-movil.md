@@ -21,7 +21,7 @@ Branch: `feat/vista-docente-movil` (from `feat/f3-supabase-vercel`) · Delivery:
 | ID | Specs | Route | Status | Commit |
 |---|---|---|---|---|
 | T1 | S2, S5 | inline | done (10 tests, RED→GREEN) | see log |
-| T2 | S5 | inline | pending | |
+| T2 | S5 | inline | done (refactor, behaviour unchanged; checked in the pane) | see log |
 | T3 | S1, S5 | inline | pending | |
 | T4 | S6 | inline | pending | |
 | T5 | S3, S7 | inline | pending | |

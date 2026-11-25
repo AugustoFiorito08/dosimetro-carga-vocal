@@ -309,11 +309,15 @@ const assessment = createVoiceAssessmentPanel({
   downloadCsv,
   csvFileName,
 });
-$('jr-event-add').addEventListener('click', () => {
+/** Context event marked by the teacher at the current session time. */
+function markEvent(type) {
   const t = manager.session?.latest?.timestamp ?? 0;
-  workdayEvents.push({ t, type: $('jr-event-type').value, source: 'docente' });
+  const event = { t, type, source: 'docente' };
+  workdayEvents.push(event);
   renderWorkdayEvents();
-});
+  return event;
+}
+$('jr-event-add').addEventListener('click', () => markEvent($('jr-event-type').value));
 /**
  * Workday of the current session. A checkpoint (lenient) skips an invalid VAS instead of
  * failing; the codes are always required, since they make the record id.
@@ -333,7 +337,8 @@ function currentWorkday({ lenient = false } = {}) {
   };
   return buildWorkday({ meta, load: manager.session.load, series: scoreSeries, startedAt: sessionStartedAt, algorithmVersion: ALGORITHM_VERSION, source: 'live' });
 }
-$('jr-save').addEventListener('click', async () => {
+/** Saves the workday of the last session; resolves to it, or null when it could not be saved. */
+async function saveWorkday() {
   try {
     const workday = currentWorkday();
     if (autosave) {
@@ -346,10 +351,13 @@ $('jr-save').addEventListener('click', async () => {
     refreshReminders();
     setText($('jr-status'), `Guardada ${workday.id}`);
     say(`Jornada guardada (${workday.events.length} eventos). Ya aparece en Mi jornada, Dirección y Analítica. En «Mi jornada» registrá tu fatiga a los 30 min, 1 h, 2 h y 4 h de terminar, y a la mañana siguiente; ahí podés agregar esos horarios a tu calendario.`);
+    return workday;
   } catch (error) {
     say(`No se pudo guardar la jornada: ${error.message.includes('code of') ? 'completá docente, escuela y aula con códigos (letras, números, «.», «-» o «_», sin espacios).' : error.message}`, 'error');
+    return null;
   }
-});
+}
+$('jr-save').addEventListener('click', saveWorkday);
 tabs.forEach(({ button }, i) => {
   button.addEventListener('click', () => selectTab(i));
   button.addEventListener('keydown', (event) => {
@@ -369,7 +377,8 @@ function onSessionEvent(event) {
   }
 }
 
-el.connect.addEventListener('click', async () => {
+/** Opens the chosen microphone; resolves true when connected. */
+async function connectMicrophone() {
   busy = true;
   try {
     const info = await manager.open({ deviceId: el.device.value || undefined });
@@ -388,12 +397,15 @@ el.connect.addEventListener('click', async () => {
     setText(el['d-format'], `${info.sampleRate} Hz · tramas de ${info.frameSize} muestras (${fixed((1000 * info.frameSize) / info.sampleRate, 1)} ms)`);
     await populateDevices();
     say('Micrófono conectado. Calibrá el ambiente en silencio.');
+    return true;
   } catch (error) {
     say(`No se pudo conectar el micrófono: ${error.message}`, 'error');
+    return false;
   } finally {
     busy = false;
   }
-});
+}
+el.connect.addEventListener('click', connectMicrophone);
 
 el.threshold.addEventListener('input', () => {
   setText(el['threshold-value'], Number(el.threshold.value).toFixed(2));
@@ -405,8 +417,10 @@ async function runTask(label, fn, done) {
     say(`${label} en curso…`);
     const result = await fn();
     say(done(result));
+    return true;
   } catch (error) {
     say(`${label}: ${error.message}`, 'error');
+    return false;
   } finally {
     progress = null;
   }
@@ -436,10 +450,10 @@ async function runCalibration(phase) {
 el['cal-pre'].addEventListener('click', () => runCalibration('pre'));
 el['cal-post'].addEventListener('click', () => runCalibration('post'));
 
-el.calibrate.addEventListener('click', () =>
-  runTask('Calibración', () => manager.session.calibrate(), (rms) => `Ambiente calibrado: ${fixed(toDb(rms), 1)} dBFS. Ahora enrolá la voz.`),
-);
-el.enroll.addEventListener('click', () =>
+const calibrateAmbient = () =>
+  runTask('Calibración', () => manager.session.calibrate(), (rms) => `Ambiente calibrado: ${fixed(toDb(rms), 1)} dBFS. Ahora enrolá la voz.`);
+el.calibrate.addEventListener('click', calibrateAmbient);
+const enrollSpeaker = () =>
   runTask('Enrolamiento', () => manager.session.enroll(), () => {
     const quality = manager.session.profileQuality;
     if (quality !== null && quality < LOW_PROFILE_QUALITY) {
@@ -449,25 +463,29 @@ el.enroll.addEventListener('click', () =>
     const f0 = range ? ` Tu tono: ${Math.round(range.low)}-${Math.round(range.high)} Hz.` : '';
     const next = manager.session.acousticCalibration ? 'Ya podés iniciar.' : 'Ahora tomá la referencia vocal.';
     return `Perfil creado${quality === null ? '' : `: reconoce el ${percent(quality)} de tu voz de prueba`}.${f0} ${next}`;
-  }),
-);
+  });
+el.enroll.addEventListener('click', enrollSpeaker);
 
 /** P90 - P10 of the reference reading: how steady the habitual voice was (spec §10.1). */
 const referenceSpread = (ref) => ref.p90Dbfs - ref.p10Dbfs;
 
-el.reference.addEventListener('click', async () => {
+/** Standardised habitual-voice reading (spec §10.1); resolves true when the reference was taken. */
+async function takeReference() {
   try {
     say('Referencia vocal en curso: leé el texto con tu voz habitual…');
     const ref = await manager.session.captureVoiceReference({ textId: STANDARD_TEXT_ID });
     say(`Referencia tomada: ${fixed(ref.levelDbfs, 1)} dBFS (P10–P90: ${fixed(referenceSpread(ref), 1)} dB, ${fixed(ref.validS, 1)} s de tu voz). Ya podés iniciar.`);
+    return true;
   } catch (error) {
     say(error.code === 'reference_too_short'
       ? 'Referencia vocal: se reconoció muy poco de tu voz. Repetila leyendo el texto de corrido durante los 30 s.'
       : `Referencia vocal: ${error.message}`, 'error');
+    return false;
   } finally {
     progress = null;
   }
-});
+}
+el.reference.addEventListener('click', takeReference);
 
 /** Why D_d is (not) shown, so an empty value is never silent. */
 function distanceDoseNote(load) {
@@ -557,13 +575,15 @@ window.addEventListener('beforeunload', (event) => {
 });
 
 // ---------- session controls ----------
-el.start.addEventListener('click', async () => {
+/** Starts a measuring session; resolves true when it started. */
+async function startSession() {
   if (hasUnsavedWork({ session: manager.session, workdaySaved })) {
-    if (!window.confirm('La sesión anterior no se guardó como jornada. ¿Descartarla e iniciar una nueva?')) return;
+    if (!window.confirm('La sesión anterior no se guardó como jornada. ¿Descartarla e iniciar una nueva?')) return false;
     try {
       await autosave?.discard();
     } catch (error) {
-      return say(`No se pudo descartar el autoguardado anterior: ${error.message}`, 'error');
+      say(`No se pudo descartar el autoguardado anterior: ${error.message}`, 'error');
+      return false;
     }
   }
   try {
@@ -581,32 +601,40 @@ el.start.addEventListener('click', async () => {
     setText($('jr-status'), 'Midiendo…');
     setText(el['dose-units'], DOSE_UNITS_TEXT[load.units](load));
     say('Sesión en curso.');
+    return true;
   } catch (error) {
     say(START_ERRORS[error.code] ?? error.message, 'error');
+    return false;
   }
-});
-el.pause.addEventListener('click', () => {
+}
+el.start.addEventListener('click', startSession);
+function pauseSession() {
   manager.session.pause();
   manager.keepAwake(false);
   autosave?.checkpoint();
   say('Sesión en pausa. Podés continuar o exportar lo registrado hasta ahora.');
-});
-el.resume.addEventListener('click', async () => {
-  // A click is a user gesture, so a suspended context can be resumed here.
+}
+el.pause.addEventListener('click', pauseSession);
+/** Must run from a user gesture, so a suspended audio context can be resumed. */
+async function resumeSession() {
   if (manager.interruption && !(await manager.resumeContext())) {
-    return say(`No se puede continuar: ${INTERRUPTION_LABELS[manager.interruption.reason]}.`, 'error');
+    say(`No se puede continuar: ${INTERRUPTION_LABELS[manager.interruption.reason]}.`, 'error');
+    return false;
   }
   manager.session.resume();
   manager.keepAwake(true);
   say('Sesión en curso.');
-});
-el.finish.addEventListener('click', () => {
+  return true;
+}
+el.resume.addEventListener('click', resumeSession);
+function finishSession() {
   manager.session.stop();
   manager.keepAwake(false);
   autosave?.stop();
   autosave?.checkpoint(); // kept until the manual save replaces it or the session is discarded
   say(`Sesión finalizada: ${manager.session.recordCount} tramas registradas. Exportá el CSV para conservarlas.`);
-});
+}
+el.finish.addEventListener('click', finishSession);
 // Optional .csv.gz: the plain .csv stays the default; without CompressionStream the option is off.
 const gzipOption = $('export-gzip');
 if (!supportsGzip()) {
