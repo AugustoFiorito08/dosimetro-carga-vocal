@@ -368,14 +368,18 @@ async function saveWorkday() {
   }
 }
 /**
- * The technical view warns when the acoustic voice takes of a timepoint are missing, but lets
- * the user go on (testing and calibration sessions); the teacher view requires them.
+ * The technical view warns when the acoustic voice takes or the Borg effort of a timepoint are
+ * missing, but lets the user go on (testing and calibration sessions); the teacher view requires them.
  */
 function confirmMissingSamples(timepoint) {
-  if (assessment.samplesDone(timepoint)) return true;
+  const missing = [
+    ...(assessment.samplesDone(timepoint) ? [] : ['las pruebas de voz (vocal /a/ y lectura del texto)']),
+    ...($(`va-${timepoint.toLowerCase()}-borg`).value !== '' ? [] : ['el esfuerzo (Borg CR10)']),
+  ];
+  if (!missing.length) return true;
   const when = timepoint === 'PRE' ? 'antes de empezar' : 'al terminar';
   // eslint-disable-next-line no-alert
-  return window.confirm(`Faltan las pruebas de voz ${when} (vocal /a/ y lectura del texto). ¿Seguir de todos modos?`);
+  return window.confirm(`Faltan ${missing.join(' y ')} ${when}. ¿Seguir de todos modos?`);
 }
 $('jr-save').addEventListener('click', () => (confirmMissingSamples('POST') ? saveWorkday() : null));
 tabs.forEach(({ button }, i) => {

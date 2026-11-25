@@ -169,6 +169,7 @@ export function createTeacherApp(deps) {
   familiarization.hidden = familiarized();
 
   const fatigueSet = (timepoint) => $(`jr-${timepoint}`).value.trim() !== '';
+  const effortSet = (timepoint) => $(`va-${timepoint}-borg`).value !== '';
 
   // ---------- toast ----------
   // While a teacher action runs, the technical view's info messages (levels in dBFS, P10-P90)
@@ -225,6 +226,7 @@ export function createTeacherApp(deps) {
     },
     pre: () => {
       if (!familiarized() && !ui.familiarized) return toast('Leé los tres ejemplos de esfuerzo y tocá «Entendido».', 'error');
+      if (!effortSet('pre')) return toast('Elegí la frase que describe el esfuerzo para producir la voz.', 'error');
       if (!fatigueSet('pre')) return toast('Marcá al menos el cansancio de la voz antes de empezar.', 'error');
       if (!deps.samplesDone('PRE')) return toast('Grabá la vocal /a/ y la lectura del texto antes de empezar.', 'error');
       ui.preConfirmed = true;
@@ -243,6 +245,7 @@ export function createTeacherApp(deps) {
       if (globalThis.confirm('¿Finalizar la jornada? Después vas a registrar cómo quedó tu voz.')) actions.finishSession();
     },
     save: () => {
+      if (!effortSet('post')) return toast('Elegí la frase que describe el esfuerzo para producir la voz.', 'error');
       if (!fatigueSet('post')) return toast('Marcá al menos el cansancio de la voz para guardar la jornada.', 'error');
       if (!deps.samplesDone('POST')) return toast('Grabá la vocal /a/ y la lectura del texto para guardar la jornada.', 'error');
       return run(async () => {
@@ -344,7 +347,7 @@ export function createTeacherApp(deps) {
       enrolled: Boolean(session?.profile) && (!lowProfile(session) || ui.enrolAccepted),
       referenceDone: Boolean(session?.voiceReference),
       calibrated: Boolean(session?.acousticCalibration),
-      preDone: ui.preConfirmed && fatigueSet('pre') && deps.samplesDone('PRE'),
+      preDone: ui.preConfirmed && effortSet('pre') && fatigueSet('pre') && deps.samplesDone('PRE'),
       mode: session?.mode ?? null,
       recordCount: session?.recordCount ?? 0,
       saved: deps.isSaved(),
@@ -399,6 +402,7 @@ export function createTeacherApp(deps) {
       [session?.acousticCalibration ? 'Micrófono calibrado' : 'Voz habitual registrada', Boolean(session?.voiceReference || session?.acousticCalibration)],
       ['Cómo estás antes de empezar', fatigueSet('pre')],
       ['Pruebas de voz antes de empezar', deps.samplesDone('PRE')],
+      ['Esfuerzo para producir la voz', effortSet('pre')],
     ];
     const html = items.map(([label, ok]) => `<li data-ok="${ok}">${label}</li>`).join('');
     const list = $('t-ready-list');
