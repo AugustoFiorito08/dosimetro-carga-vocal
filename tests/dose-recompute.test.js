@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { FIXED_H_REF, PARAM_RANGES, compareModels, recomputeDoses, recomputeParams, recomputeWorkdays } from '../src/stats/dose-recompute.js';
+import { DEFAULT_MODEL_PARAMS } from '../src/math/dose-models.js';
 import { createSecondSeries } from '../src/store/second-series.js';
 import { createVocalLoadState, stepVocalLoad } from '../src/vocal-load.js';
 
@@ -57,6 +58,19 @@ describe('dose recomputation from the per-second series', () => {
     for (const m of ['none', 'linear', 'power', 'exponential', 'saturating']) near(doses[m], load.doses[m], 1.5e-2); // 1 Hz resolution: about 1 % at β = 0.03
   });
 
+  it('by default it uses the engine values, so it reproduces the stored doses', () => {
+    let load = createVocalLoadState();
+    const series = createSecondSeries();
+    const dt = 2048 / 48000;
+    for (let i = 0; i < 40000; i++) {
+      const voiced = i % 50 < 35;
+      load = stepVocalLoad(load, { dt, voiced, identityMatch: true, qualityOk: true, f0: 160 + (i % 30), pressure: 0.05 });
+      series.push({ dt, phi: load.lastFrame.phi, f0: 160 + (i % 30), intensity: load.lastFrame.intensity });
+    }
+    const doses = recomputeDoses(series.toJSON());
+    for (const m of ['none', 'linear', 'power', 'exponential', 'saturating']) near(doses[m], load.doses[m], 2e-3); // 1 Hz resolution: about 0.1 % at β = 1/300
+  });
+
   it('changing β or α_L recomputes, D0 stays, and the workdays are never modified', () => {
     const days = deepFreeze([workday('A', continuous), workday('B', alternating), workday('OLD', null)]);
     const before = structuredClone(days);
@@ -80,15 +94,18 @@ describe('dose recomputation from the per-second series', () => {
     assert.throws(() => recomputeDoses(continuous, { beta: 0.03, alphaL: 0 }), RangeError);
   });
 
-  it('every shape has its own range and initial value from the parameters document; H_ref is fixed', () => {
+  it('every shape has its own range, starting at the engine value; H_ref is fixed at the engine H*', () => {
+    const e = DEFAULT_MODEL_PARAMS;
     assert.deepEqual(Object.fromEntries(Object.entries(PARAM_RANGES).map(([k, r]) => [k, [r.min, r.max, r.initial]])), {
-      beta: [0.005, 0.1, 0.03], alphaL: [0.005, 0.1, 0.05], a: [0.1, 3, 1], p: [0.5, 3, 2],
-      alphaE: [0.002, 0.06, 0.025], A: [0.25, 6, 3], kH: [5, 120, 40],
+      beta: [0.001, 0.1, e.beta], alphaL: [0.001, 0.1, e.alphaL], a: [0.1, 3, e.a], p: [0.5, 3, e.p],
+      alphaE: [0.001, 0.06, e.alphaE], A: [0.25, 6, e.A], kH: [5, 600, e.kH],
     });
-    assert.equal(FIXED_H_REF, 20);
+    assert.ok(Math.abs(e.beta - 1 / 300) < 1e-15);
+    assert.equal(FIXED_H_REF, e.hRef);
+    assert.equal(FIXED_H_REF, 300);
     const p = recomputeParams({ beta: 0.01 });
-    assert.deepEqual([p.beta, p.alphaL, p.a, p.p, p.hRef, p.alphaE, p.A, p.kH], [0.01, 0.05, 1, 2, 20, 0.025, 3, 40]);
-    for (const [name, value] of [['a', 5], ['p', 0.1], ['alphaE', 0.1], ['A', 0.1], ['kH', 200]]) {
+    assert.deepEqual([p.beta, p.alphaL, p.a, p.p, p.hRef, p.alphaE, p.A, p.kH], [0.01, e.alphaL, 1, 2, 300, e.alphaE, 2, 300]);
+    for (const [name, value] of [['a', 5], ['p', 0.1], ['alphaE', 0.1], ['A', 0.1], ['kH', 700]]) {
       assert.throws(() => recomputeParams({ [name]: value }), RangeError, name);
     }
   });

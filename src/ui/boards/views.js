@@ -336,7 +336,7 @@ function recomputePanel(workdays, state) {
     ? `<div class="recompute-controls">${groups}</div>
       <div class="board-filters"><label>Modelo de la curva <select data-param="recomputeModel">${RECOMPUTED_MODELS.map((m) => `<option value="${m}"${m === curveModel(state) ? ' selected' : ''}>${DOSE_LABELS[m]}</option>`).join('')}</select></label>
       <label>Jornada <select data-param="recomputeWorkday">${withSeries.map((w) => `<option value="${esc(w.id)}"${w.id === state.recomputeWorkday ? ' selected' : ''}>${esc(w.participantId)} · ${dayLabel(w.date)} · ${clock(w.startedAt)}</option>`).join('')}</select></label>
-      <button type="button" class="btn" data-action="recompute-reset">Volver a los valores iniciales</button></div>`
+      <button type="button" class="btn" data-action="recompute-reset">Volver a los valores del motor</button></div>`
     : '';
   return panel('Recálculo desde la serie por segundo', `${controls}<div data-recompute-body>${recomputeBody(workdays, state)}</div>`, 'span-2');
 }
@@ -378,7 +378,7 @@ export function recomputeBody(workdays, state) {
   </div>
   <p class="hint">Exploratorias: solo jornadas con serie y dosis recalculadas con los valores de arriba. Mover los parámetros no cambia las curvas, el corte de Youden ni los niveles de acción de arriba, que usan las dosis guardadas. Ajustar mirando estas curvas da AUC optimistas: los valores elegidos se congelan y se validan en jornadas nuevas.</p>`;
   return `${curves}<div class="board-grid recompute-grid"><div><h3>${entries.length} jornadas con serie · ${esc(outcome.caseText(threshold))}</h3>${table}<p class="hint">${c.cases} casos · ${c.controls} controles. AUC aparentes, sobre la misma muestra. Un modelo con memoria solo aporta si supera a D0 de forma reproducible.</p></div><div><h3>Jornada elegida</h3>${day}</div></div>
-    <p class="hint">β = ${fmt(values.beta, 3)} s⁻¹ (τ = ${fmt(1 / values.beta, 0)} s) · α_L = ${fmt(values.alphaL, 3)} s⁻¹ · a = ${fmt(values.a, 2)}, p = ${fmt(values.p, 2)}, H_ref = ${FIXED_H_REF} s (fijo) · α_E = ${fmt(values.alphaE, 3)} s⁻¹ · A = ${fmt(values.A, 2)}, K_H = ${fmt(values.kH, 0)} s. Cada parámetro de forma mueve solo su modelo, y β solo la memoria. Las dosis guardadas en cada jornada no cambian; a 1 Hz las dosis con memoria difieren del cálculo por trama en torno al 1 % con β = 0,03.</p>${old}`;
+    <p class="hint">β = ${fmt(values.beta, 4)} s⁻¹ (τ = ${fmt(1 / values.beta, 0)} s) · α_L = ${fmt(values.alphaL, 4)} s⁻¹ · a = ${fmt(values.a, 2)}, p = ${fmt(values.p, 2)}, H_ref = ${FIXED_H_REF} s (fijo) · α_E = ${fmt(values.alphaE, 4)} s⁻¹ · A = ${fmt(values.A, 2)}, K_H = ${fmt(values.kH, 0)} s. Cada parámetro de forma mueve solo su modelo, y β solo la memoria. Los valores iniciales son los del motor que midió las jornadas, así que de entrada reproducen las dosis guardadas (a 1 Hz difieren del cálculo por trama en torno al 0,1 %; con β = 0,03, en torno al 1 %). Las dosis guardadas en cada jornada no cambian.</p>${old}`;
 }
 
 /** CSV of the workday summaries (one row per workday, no audio, codes only). */
