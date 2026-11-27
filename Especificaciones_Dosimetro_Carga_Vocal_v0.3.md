@@ -1,9 +1,9 @@
-# Dosímetro de Carga Vocal con Identificación del Hablante v0.3
+# Dosímetro de Carga Vocal con Identificación del Hablante
 
 **Documento de especificaciones del sistema**  
-**Versión del sistema:** 0.4.0  
-**Versión del documento:** 1.0  
-**Fecha:** 2026-11-04  
+**Versión del sistema:** 0.9.0  
+**Versión del documento:** 1.1  
+**Fecha:** 2026-11-27 (primera versión: 2026-11-04, sistema 0.3; el nombre del archivo conserva ese origen)  
 **Estado:** Prototipo experimental sujeto a identificación paramétrica y validación experimental
 
 ## 1. Descripción general
@@ -325,7 +325,7 @@ Si no existe calibración, los resultados deben rotularse como relativos. La pre
 
 ### 10.1 Intensidad normalizada a la voz propia (sin calibración)
 
-En el protocolo de estudio cada participante usa su propio celular, con una diadema del mismo tipo y marca a 1–2 cm de la boca, y no hay sonómetro. La sensibilidad de cada celular es distinta: con `I_k = (P_k / P_0)^2` sobre la amplitud digital, la misma voz en un celular 12 dB más sensible daba **16 veces** más dosis. Sin calibración acústica, la intensidad se normaliza a la voz normal de cada participante:
+En el protocolo de estudio cada participante usa su propio celular, con una diadema del mismo tipo y marca a 2–3 cm de la boca, y no hay sonómetro. La sensibilidad de cada celular es distinta: con `I_k = (P_k / P_0)^2` sobre la amplitud digital, la misma voz en un celular 12 dB más sensible daba **16 veces** más dosis. Sin calibración acústica, la intensidad se normaliza a la voz normal de cada participante:
 
 ```text
 I_k = (P_k / P_ref)^2 = 10^((L_k − L_ref) / 10)
@@ -592,19 +592,19 @@ Vista de investigación sobre todas las jornadas disponibles. El **desenlace** s
 - recálculo desde la serie por segundo (ver abajo);
 - exportación de los resúmenes en CSV.
 
-**Recálculo desde la serie por segundo.** Las jornadas que tienen `perSecond` (§14.1) se recalculan en el navegador con un deslizador por parámetro, agrupados por familia y dentro de los rangos de búsqueda del documento de parámetros de f(H) (§2 y §16):
+**Recálculo desde la serie por segundo.** Las jornadas que tienen `perSecond` (§14.1) se recalculan en el navegador con un deslizador por parámetro, agrupados por familia. Los rangos son los de búsqueda del documento de parámetros de f(H) (§2 y §16), ampliados para incluir los valores del motor; cada deslizador empieza en el valor con el que el motor midió las jornadas (§11.6, `DEFAULT_MODEL_PARAMS`), así que de entrada el recálculo reproduce las dosis guardadas:
 
-| Familia | Parámetro | Rango | Inicial |
+| Familia | Parámetro | Rango | Inicial (motor) |
 |---|---|---|---|
-| Memoria | β | 0,005–0,100 s⁻¹ | 0,030 |
-| Lineal | α_L | 0,005–0,100 s⁻¹ | 0,050 |
+| Memoria | β | 0,001–0,100 s⁻¹ | 1/300 ≈ 0,0033 |
+| Lineal | α_L | 0,001–0,100 s⁻¹ | 1/300 ≈ 0,0033 |
 | Potencial | a | 0,10–3,00 | 1,00 |
 | Potencial | p | 0,50–3,00 | 2,00 |
-| Exponencial | α_E | 0,002–0,060 s⁻¹ | 0,025 |
-| Saturante | A | 0,25–6,00 | 3,00 |
-| Saturante | K_H | 5–120 s | 40 |
+| Exponencial | α_E | 0,001–0,060 s⁻¹ | ln 2/300 ≈ 0,0023 |
+| Saturante | A | 0,25–6,00 | 2,00 |
+| Saturante | K_H | 5–600 s | 300 |
 
-H_ref queda fijo en 20 s y no se ajusta, porque a, p y H_ref se compensan entre sí (documento de parámetros, §7). Cada parámetro de forma mueve solo su modelo y β solo la memoria; ya no se usa el ancla del motor, que ataba las formas a β. Un botón vuelve a los valores iniciales. Segundo a segundo se aplica H_k = H_(k−1)·e^(−β) + phonation_k y cada modelo suma phonation_k · f0I_k · f(H_k), con las mismas funciones de memoria que el motor. Mover un deslizador recalcula al instante:
+H_ref queda fijo en 300 s (el H* del motor) y no se ajusta, porque a, p y H_ref se compensan entre sí (documento de parámetros, §7). Cada parámetro de forma mueve solo su modelo y β solo la memoria: el ancla del motor, que ata las formas a β, no se aplica al mover los deslizadores. Un botón vuelve a los valores del motor. Segundo a segundo se aplica H_k = H_(k−1)·e^(−β) + phonation_k y cada modelo suma phonation_k · f0I_k · f(H_k), con las mismas funciones de memoria que el motor. Mover un deslizador recalcula al instante:
 
 - por modelo, sobre las jornadas con serie: rho de Spearman con el desenlace elegido, AUC con su IC 95 % y la diferencia de AUC con D₀, que es la referencia;
 - para una jornada elegida: la dosis recalculada de cada modelo, cuántas veces D₀ es, y sus ΔF, AUC_F y T₉₀.
@@ -612,7 +612,7 @@ H_ref queda fijo en 20 s y no se ajusta, porque a, p y H_ref se compensan entre 
 
 Las curvas exploratorias están dentro del panel y separadas de las principales: la dosis-respuesta, las ROC, el corte de Youden y los niveles de acción de arriba siguen usando las dosis guardadas y no cambian al mover los parámetros. Así los umbrales provisionales no se eligen mirando el resultado. Ajustar mirando las curvas exploratorias da AUC optimistas: los valores elegidos se congelan y se validan en jornadas nuevas (documento de parámetros, §12–14).
 
-Las dosis guardadas en las jornadas no cambian: el recálculo vive solo en pantalla. Las jornadas sin serie (anteriores a ella, importadas sin ella o simuladas) se cuentan aparte, con un aviso de que no admiten recálculo; si ninguna la tiene, el panel lo dice en lugar de mostrar la tabla. A 1 Hz no se sabe cómo se repartió la voz dentro de cada segundo: frente al cálculo por trama, las dosis con memoria difieren alrededor de 0,1 % con β = 0,005, 1 % con 0,03 y 2–3 % con 0,1; D₀ coincide salvo el redondeo con que se guarda la serie. No hay tabla de juegos de parámetros ni versionado: esos valores todavía se exploran, no se congelan.
+Las dosis guardadas en las jornadas no cambian: el recálculo vive solo en pantalla. Las jornadas sin serie (anteriores a ella, importadas sin ella o simuladas) se cuentan aparte, con un aviso de que no admiten recálculo; si ninguna la tiene, el panel lo dice en lugar de mostrar la tabla. A 1 Hz no se sabe cómo se repartió la voz dentro de cada segundo: frente al cálculo por trama, las dosis con memoria difieren alrededor de 0,1 % con los valores del motor (β = 1/300) o β = 0,005, 1 % con 0,03 y 2–3 % con 0,1; D₀ coincide salvo el redondeo con que se guarda la serie. No hay tabla de juegos de parámetros ni versionado: esos valores todavía se exploran, no se congelan.
 
 Las AUC son aparentes (misma muestra); la validación agrupada por docente, los modelos mixtos y los splines quedan para el análisis definitivo. Todas las pantallas indican "Valores provisionales · sin umbrales sanitarios validados".
 
@@ -738,7 +738,7 @@ Como resguardo, el contrato rechaza cualquier arreglo de más de 100 valores num
 - Se debe poder borrar todo lo asociado a un código si la persona retira su consentimiento.
 - El transporte (HTTP, autenticación) y el proveedor quedan fuera de este contrato.
 
-**Cola de envío y reintentos.** La base local pasa a la versión 2, que agrega el almacén `outbox`. La migración desde la versión 1 solo crea ese almacén y conserva intactas las jornadas guardadas. Si otra pestaña tiene abierta la versión anterior, se pide cerrarla y recargar.
+**Cola de envío y reintentos.** La versión 2 de la base local agregó el almacén `outbox` (la versión 3 agrega `frames`, ver «Datos primarios por trama»). La migración desde la versión 1 solo crea ese almacén y conserva intactas las jornadas guardadas. Si otra pestaña tiene abierta la versión anterior, se pide cerrarla y recargar.
 
 - Al guardar una jornada final medida en el equipo (`source = live`), ya sea con «Guardar jornada» o al cerrar el autoguardado, se encola su registro de envío.
 - También se encolan las jornadas recuperadas.
@@ -787,13 +787,15 @@ Como resguardo, el contrato rechaza cualquier arreglo de más de 100 valores num
 Por sesión se guardan la duración de trama, la frecuencia de muestreo, el tamaño de trama, las pausas (índice de trama y segundos), cómo se pasa de la RMS a la presión (coeficiente de calibración, o la RMS A₀ de la voz habitual), P₀, las unidades y la versión del algoritmo. No hay audio, espectro, plantilla del hablante ni el nombre del micrófono (puede contener nombres de personas). Son 6 bytes por trama: unos 4 MB por 8 h antes de comprimir y, en el peor caso, unos 3,3 MB comprimidos y en base64.
 
 - **En el celular:** al guardar la jornada, sus tramas quedan en el almacén `frames` de IndexedDB (esquema v3). Se borran con la jornada y con «Borrar jornadas». Las jornadas autoguardadas y recuperadas tras un cierre inesperado no tienen tramas: solo se guardan al guardar la jornada.
-- **Envío:** solo con el envío activado. Las tramas salen después de su jornada, en partes de menos de 2 MB (`vd-des-frames-part/1`) a la función `upload_workday_frames`, que valida el mismo token y que la jornada ya esté recibida y sea de la escuela del token. Se guardan en `workday_frames`, una fila por parte, con clave (clave de envío, parte): reenviar reemplaza, no duplica. Si falla una parte, el reintento sigue desde esa parte. Confirmado el envío, se borran del celular.
+- **Envío:** solo con el envío activado. Las tramas salen después de su jornada, en partes de menos de 2 MB (`vd-des-frames-part/1`) a la función `upload_workday_frames`, que valida el mismo token y que la jornada ya esté recibida y sea de la escuela del token. Se guardan en `workday_frames`, una fila por parte, con clave (clave de envío, parte): reenviar reemplaza, no duplica. Si falla una parte, el reintento sigue desde esa parte. Confirmado el envío, se borran del celular. Si el servidor rechaza la jornada, sus tramas quedan rechazadas con ella (el panel las cuenta aparte) y no se intentan enviar; siguen en el celular, y volver a guardar la jornada encola las dos de nuevo.
 - **Recálculo:** `src/stats/frame-recompute.js` recorre las tramas con las mismas reglas del motor. Con los parámetros de la grabación reproduce las dosis guardadas: la diferencia sale solo del redondeo del nivel, como mucho 0,06 % por trama y del orden de 1e-6 en una jornada con niveles variados. Permite cambiar los parámetros de f(H), A₀ y q (I = (P/P₀)^q).
 - **Consentimiento:** el texto del consentimiento debe decir que, además del resumen, se envían el nivel y la F0 de cada trama, sin audio.
 
 ## 15. Instalación y ejecución
 
-1. Descomprimir `dosimetro_carga_vocal_hablante_v0.3.zip`.
+La aplicación publicada se sirve desde Vercel con la rama `main` (`vercel.json`). Para correrla localmente:
+
+1. Clonar el repositorio (`git clone`) o descargarlo.
 2. Abrir una terminal dentro de la carpeta del proyecto.
 3. Ejecutar:
 
@@ -832,27 +834,22 @@ En el celular, la vista docente (§12.6) guía estos pasos uno por uno.
 15. Exportar el CSV.
 16. Guardar la jornada y registrar la fatiga en «Mi jornada» a los 30 min, 1 h, 2 h y 4 h de terminar, y a la mañana siguiente (§24).
 
-## 17. Verificación de la versión 0.3
+## 17. Verificación
 
-La versión entregada superó:
+`npm test` corre las pruebas automatizadas con `node --test` (carpeta `tests/`). Al 2026-11-27 son 589 pruebas, todas aprobadas, que cubren:
 
-- 13 de 13 pruebas automatizadas;
-- verificación de las cinco ecuaciones;
-- pruebas de fonación y no fonación;
-- verificación del porcentaje de fonación;
-- rechazo sintético de ruido de banda ancha;
-- rechazo de silencio e impulsos;
-- construcción y comparación de perfiles;
-- validación sintáctica de módulos;
-- inicialización de interfaz;
-- respuesta HTTP local;
-- comprobación de integridad del archivo ZIP.
+- las cinco ecuaciones, el estado H, la normalización a la voz propia y las dosis convencionales;
+- fonación y no fonación, F0 con señales sintéticas, rechazo de silencio, ruido de banda ancha, impulsos y tonos fuera de banda;
+- construcción y comparación de perfiles de hablante con voces sintéticas;
+- calibración acústica y su deriva;
+- evaluación acústica PRE–POST, protocolo y control de calidad;
+- registro, autoguardado, exportación CSV y recuperación;
+- contrato de envío, cola, transporte, tramas primarias y su recálculo, y el SQL de referencia;
+- estadística de los tableros, recálculo de dosis y vistas.
 
-SHA-256 del paquete entregado:
+No están cubiertas por pruebas automatizadas: la captura con micrófono real, la interfaz completa en el navegador (se revisa a mano), los adaptadores de IndexedDB (se prueban sus equivalentes en memoria), la vista docente más allá de sus modelos, y la validación contra voces reales, Praat o un sonómetro (§20).
 
-```text
-c2f79233854439dcd14699bdaff14b05fa819f302df363f6a50fda0819370aa1
-```
+La versión 0.3 se entregó como ZIP verificado con 13 pruebas automatizadas; ese procedimiento ya no se usa.
 
 ## 18. Protocolo mínimo de prueba funcional
 
@@ -913,10 +910,13 @@ La salida correcta es un índice experimental de carga vocal calculada. No debe 
 | 0.3.1 | 2026-11-13 | Anclaje común `f(H*) = f*` ligado a `beta` y dosis convencionales de tiempo y de ciclos |
 | 0.3.2 | 2026-11-13 | Filtro pasa-altos de 50 Hz en la entrada; corte registrado en los parámetros exportados |
 | 0.4.0 | 2026-11-18 | Calibración acústica con tono de referencia, deriva pre/post, presión en Pa y nivel en dB SPL en el CSV, `P_0 = 1 Pa` con calibración, y dosis de distancia `D_d` de Titze, Švec y Popolo (2003) |
+| 0.5.0 | 2026-11-20 | Verificación de hablante calibrada por hablante (§6.2): enrolamiento guiado en voz normal y alta, puntaje relativo a la variabilidad propia, coherencia de F0 e histéresis |
 | 0.6.0 | 2026-11-20 | Evaluación acústica PRE–POST (§23): /a/ sostenida y texto estándar analizados en memoria y borrados; F0, CPP/CPPS, HNR, LTAS, cepstro medio, jitter y shimmer exploratorios; EVA de esfuerzo, molestia y sequedad; registro `VOICE_ACOUSTIC_ASSESSMENT` |
 | 0.7.0 | 2026-11-22 | Intensidad normalizada a la voz propia sin calibración (§10.1): `I = 1` a la voz normal del enrolamiento, dosis comparables entre celulares, `ownVoiceRefDbfs` en la jornada y en los CSV; `D_d` oculta en la interfaz |
 | 0.8.0 | 2026-11-22 | Captura que avisa y pausa ante micrófono perdido, audio suspendido o página oculta, con wake lock; autoguardado periódico de la jornada con recuperación tras cierre inesperado (§12.2); `parameters` del CSV solo en la primera fila (§13); exportación del CSV por bloques de 10 000 filas, sin un texto único del tamaño del documento, y exportación optativa comprimida `.csv.gz` (§13); contrato de envío de resúmenes de jornada a una base analítica, con `sessionUuid` y `deviceId` optativos (§14.1) |
 | 0.9.0 | 2026-11-25 | Referencia vocal estandarizada (§10.1): paso propio de 30 s de lectura del texto estándar en voz habitual, obligatorio sin calibración; `A_ref` = mediana de la fonación aceptada, con P10 y P90; `ownVoiceRef` y `capture` (estado del control automático de ganancia, supresión de ruido y cancelación de eco) en la jornada, los parámetros del CSV y el contrato de envío (§14.1). Hay que volver a ejecutar `supabase/workday_sync.sql` antes de enviar jornadas 0.9.0 |
+| 0.9.0 (sin cambio de número) | 2026-11-25 | Recuperación después de la jornada (§24) con avisos; vista docente para el celular (§12.6) |
+| 0.9.0 (sin cambio de número) | 2026-11-27 | Pruebas de voz obligatorias; esfuerzo con Borg CR10 (§23.1); serie por segundo `perSecond` y recálculo en Analítica con valores iniciales del motor (§12.5); datos primarios por trama `vd-des-frames/1` y su envío (§14.1); consentimiento de datos en la app (`vd-consent-datos-v2`). Documento 1.1 |
 
 ## 23. Evaluación acústica PRE–POST
 
