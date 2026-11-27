@@ -205,6 +205,30 @@ as $$
   );
 $$;
 
+-- Consent that enables uploads; the app shows this version's text (src/store/sync-settings.js).
+create or replace function public.current_consent_version()
+returns text
+language sql
+immutable
+set search_path = ''
+as $$ select 'vd-consent-datos-v3'::text $$;
+
+-- True while the calling teacher holds the current consent: every teacher write needs it
+-- (workday, frames and recovery points), so nothing more arrives after a withdrawal.
+create or replace function public.has_current_consent()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.consents c
+     where c.participant_id = public.my_participant()
+       and c.version = public.current_consent_version() and c.withdrawn_at is null
+  );
+$$;
+
 revoke all on function public.my_participant(), public.analyst_reads(text), public.can_read_workday(text), public.owns_workday(text) from public, anon;
 grant execute on function public.my_participant(), public.analyst_reads(text), public.can_read_workday(text), public.owns_workday(text) to authenticated;
 
@@ -284,21 +308,13 @@ create policy recovery_read on public.recovery_points for select to authenticate
 -- The teacher records her recovery directly, also days after the workday was sent.
 drop policy if exists recovery_write_own on public.recovery_points;
 create policy recovery_write_own on public.recovery_points for insert to authenticated
-  with check (public.owns_workday(sync_key));
+  with check (public.owns_workday(sync_key) and public.has_current_consent());
 drop policy if exists recovery_update_own on public.recovery_points;
 create policy recovery_update_own on public.recovery_points for update to authenticated
   using (public.owns_workday(sync_key))
-  with check (public.owns_workday(sync_key));
+  with check (public.owns_workday(sync_key) and public.has_current_consent());
 
 -- ---------- uploads ----------
-
--- Consent that enables uploads; the app shows this version's text (src/store/sync-settings.js).
-create or replace function public.current_consent_version()
-returns text
-language sql
-immutable
-set search_path = ''
-as $$ select 'vd-consent-datos-v3'::text $$;
 
 -- Payload (vd-des-upload/2):
 --   { format, workday: { syncKey, workdayId, participantId, schoolId, classroom, date, startedAt,
@@ -356,10 +372,7 @@ begin
   if w ->> 'participantId' is distinct from me or w ->> 'schoolId' is distinct from my_school then
     raise exception 'a teacher uploads only her own workdays' using errcode = 'PT403';
   end if;
-  if not exists (
-    select 1 from public.consents c
-     where c.participant_id = me and c.version = public.current_consent_version() and c.withdrawn_at is null
-  ) then
+  if not public.has_current_consent() then
     raise exception 'no current consent for uploads' using errcode = 'PT403';
   end if;
   select x.participant_id into owner from public.workdays x where x.sync_key = key;
@@ -387,7 +400,11 @@ begin
     checkpoint_status = excluded.checkpoint_status,
     own_voice_ref = excluded.own_voice_ref,
     capture = excluded.capture,
-    updated_at = now();
+    updated_at = now()
+  where x.participant_id = me; -- a concurrent claim of the same key by another teacher changes nothing
+  if not found then
+    raise exception 'this sync key belongs to another teacher' using errcode = 'PT403';
+  end if;
 
   delete from public.self_reports where sync_key = key;
   delete from public.workday_events where sync_key = key;
@@ -403,8 +420,9 @@ begin
     n := n + 1;
   end loop;
   for el in select e.value from jsonb_array_elements(payload -> 'voiceTests') as e(value) loop
-    if jsonb_path_exists(el -> 'result', 'strict $.** ? (@.type() == "array" && @.size() > 100)') then
-      raise exception 'voice test results hold no array over 100 values (no audio)' using errcode = '22023';
+    if jsonb_path_exists(el -> 'result', 'strict $.** ? (@.type() == "array" && @.size() > 100)')
+       or jsonb_path_exists(el -> 'result', 'strict $.** ? (@.type() == "string" && @ like_regex "^.{201}")') then
+      raise exception 'voice test results hold no array over 100 values or text over 200 characters (no audio)' using errcode = '22023';
     end if;
     insert into public.voice_tests (sync_key, timepoint, task, result)
     values (key, el ->> 'timepoint', el ->> 'task', el -> 'result');
@@ -456,6 +474,9 @@ begin
   if owner is distinct from public.my_participant() then
     raise exception 'a teacher uploads only frames of her own workdays' using errcode = 'PT403';
   end if;
+  if not public.has_current_consent() then
+    raise exception 'no current consent for uploads' using errcode = 'PT403';
+  end if;
 
   insert into public.frames as f (sync_key, part, parts, header, data)
   values (key, part_no, total, payload -> 'header', payload ->> 'data')
@@ -467,8 +488,8 @@ begin
 end;
 $$;
 
-revoke all on function public.current_consent_version(), public.submit_workday(jsonb), public.submit_frames(jsonb) from public, anon;
-grant execute on function public.current_consent_version(), public.submit_workday(jsonb), public.submit_frames(jsonb) to authenticated;
+revoke all on function public.current_consent_version(), public.has_current_consent(), public.submit_workday(jsonb), public.submit_frames(jsonb) from public, anon;
+grant execute on function public.current_consent_version(), public.has_current_consent(), public.submit_workday(jsonb), public.submit_frames(jsonb) to authenticated;
 
 -- ---------- withdrawal of consent ----------
 -- Deletes every workday of a participant code, with its frames, self-reports, recovery points,

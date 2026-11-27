@@ -148,6 +148,9 @@ describe('role-based schema on Postgres (supabase/schema.sql)', () => {
     audio.voiceTests = [{ timepoint: 'pre', task: 'vowel', result: { audioRetained: true } }];
     await assert.rejects(t1(audio), code('23514'));
     await assert.rejects(t1({ ...workday('Y6', 'P1', 'E1'), format: 'vd-des-workdays/1' }), code('22023'));
+    const encoded = workday('Y7', 'P1', 'E1');
+    encoded.voiceTests = [{ timepoint: 'pre', task: 'vowel', result: { audioRetained: false, wav: `UklGR${'A'.repeat(300)}` } }];
+    await assert.rejects(t1(encoded), code('22023'), 'no audio as a long string either');
     assert.deepEqual(await rows(db, `select sync_key from public.workdays where sync_key like 'Y%'`), [], 'nothing half-written');
   });
 
@@ -198,6 +201,8 @@ describe('role-based schema on Postgres (supabase/schema.sql)', () => {
     await assert.rejects(as(db, USERS.t2, (tx) => tx.query(`insert into public.consents (participant_id, version) values ('P1', 'vd-consent-datos-v4')`)), code('42501'));
     await as(db, USERS.t2, (tx) => tx.query(`update public.consents set withdrawn_at = now() where participant_id = 'P2'`));
     await assert.rejects(as(db, USERS.t2, (tx) => submit(tx, workday('K2b', 'P2', 'E1'))), code('PT403'), 'no uploads after withdrawing');
+    await assert.rejects(as(db, USERS.t2, (tx) => submitFrames(tx, part('K2', 0, 1))), code('PT403'), 'no frames after withdrawing');
+    await assert.rejects(as(db, USERS.t2, (tx) => tx.query(`insert into public.recovery_points values ('K2', 'R30', now(), 30, 20)`)), code('42501'), 'no recovery after withdrawing');
     await assert.rejects(as(db, USERS.t2, (tx) => tx.query(`update public.consents set withdrawn_at = null where participant_id = 'P2'`)), code('42501'));
     await assert.rejects(as(db, USERS.t2, (tx) => tx.query(`update public.consents set version = 'vd-consent-datos-v9' where participant_id = 'P2'`)), code('42501'));
   });
