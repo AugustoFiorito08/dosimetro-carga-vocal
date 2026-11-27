@@ -82,6 +82,7 @@ export function createSyncPanel({ $, outbox, repository, onPurged, storage = glo
     if (event.type === 'sent' && event.kind === 'frames') return ` Últimos datos por trama enviados a las ${clock(event.at)}${event.purged ? ' y borrados de este equipo' : ''}.`;
     if (event.type === 'sent') return ` Última jornada enviada a las ${clock(event.at)}${event.purged ? ' y borrada de este equipo' : ''}.`;
     if (event.type === 'retry') return ` Falló el intento ${event.attempts}; se reintenta a las ${clock(event.nextAttemptAt)}: ${describeError(event.error)}.`;
+    if (event.type === 'rejected' && String(event.key).startsWith('frames:')) return ` Los datos por trama de una jornada no se enviarán: ${describeError(event.error)}.`;
     if (event.type === 'rejected') return ` El servidor rechazó una jornada y no se reintentará: ${describeError(event.error)}.`;
     return '';
   }
@@ -98,11 +99,12 @@ export function createSyncPanel({ $, outbox, repository, onPurged, storage = glo
         pending: workdays.filter((i) => i.state === 'pending').length,
         rejected: workdays.filter((i) => i.state === 'rejected').length,
         frames: items.filter((i) => i.kind === 'frames').length,
+        framesRejected: items.filter((i) => i.kind === 'frames' && i.state === 'rejected').length,
       };
     } catch (error) {
       return setStatus(`No se pudo leer la cola de envío: ${error.message}`, 'error');
     }
-    const queue = `En cola: ${plural(counts.pending, 'jornada pendiente', 'jornadas pendientes')}${counts.rejected ? `, ${plural(counts.rejected, 'rechazada', 'rechazadas')}` : ''}${counts.frames ? `; datos por trama de ${plural(counts.frames, 'jornada', 'jornadas')}` : ''}.`;
+    const queue = `En cola: ${plural(counts.pending, 'jornada pendiente', 'jornadas pendientes')}${counts.rejected ? `, ${plural(counts.rejected, 'rechazada', 'rechazadas')}` : ''}${counts.frames ? `; datos por trama de ${plural(counts.frames, 'jornada', 'jornadas')}${counts.framesRejected ? ` (${plural(counts.framesRejected, 'rechazada', 'rechazadas')})` : ''}` : ''}.`;
     if (!isEnabled()) {
       setStatus(`${settings ? 'Credenciales guardadas; envío desactivado.' : 'Sin configurar: no se envía nada.'} ${queue}`);
       return;

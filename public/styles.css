@@ -444,6 +444,8 @@ select, input[type='number'] {
   .layout { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; }
   .topbar { padding: 12px 16px; flex-wrap: wrap; }
   .status-kpi { grid-column: 1 / -1; }
+  /* Every tab in view on a phone: they wrap instead of hiding past the edge. */
+  .tabs { flex-wrap: wrap; overflow-x: visible; }
   .doses td:nth-child(2) { display: none; }
   .doses thead th:nth-child(2) { display: none; }
 }

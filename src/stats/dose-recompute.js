@@ -9,30 +9,35 @@
 // so D0 is the sum of phonation_k · f0I_k. Within a second H is taken at its end, which is the
 // only difference with the per-frame engine: the series does not say how the voice was spread
 // inside each second. Measured against the engine, the doses with memory differ by about 0.1 %
-// with β = 0.005 s⁻¹, 1 % with 0.03 and 2-3 % with 0.1; D0 is exact to the stored rounding.
-import { DOSE_MODELS, memoryFunctions, resolveModelParams } from '../math/dose-models.js';
+// with the engine values (β = 1/300 s⁻¹), 1 % with β = 0.03 and 2-3 % with 0.1; D0 is exact to
+// the stored rounding.
+import { DEFAULT_MODEL_PARAMS, DOSE_MODELS, memoryFunctions, resolveModelParams } from '../math/dose-models.js';
 import { rocCurve, spearman } from './inference.js';
 import { outcomeCase, outcomeValue } from './outcomes.js';
 
+const E = DEFAULT_MODEL_PARAMS;
+
 /**
- * Search ranges and initial values of the adjustable parameters (Parámetros de f(H), §2 and
- * §16): memory (β), linear (α_L), power (a, p), exponential (α_E) and saturating (A, K_H).
+ * Search ranges of the adjustable parameters (Parámetros de f(H), §2 and §16, widened to hold the
+ * engine values): memory (β), linear (α_L), power (a, p), exponential (α_E) and saturating
+ * (A, K_H). Each starts at the value the engine records with (src/math/dose-models.js), so the
+ * recomputation starts from the stored doses.
  */
 export const PARAM_RANGES = Object.freeze({
-  beta: Object.freeze({ min: 0.005, max: 0.1, step: 0.005, initial: 0.03 }),
-  alphaL: Object.freeze({ min: 0.005, max: 0.1, step: 0.005, initial: 0.05 }),
-  a: Object.freeze({ min: 0.1, max: 3, step: 0.05, initial: 1 }),
-  p: Object.freeze({ min: 0.5, max: 3, step: 0.05, initial: 2 }),
-  alphaE: Object.freeze({ min: 0.002, max: 0.06, step: 0.001, initial: 0.025 }),
-  A: Object.freeze({ min: 0.25, max: 6, step: 0.05, initial: 3 }),
-  kH: Object.freeze({ min: 5, max: 120, step: 1, initial: 40 }),
+  beta: Object.freeze({ min: 0.001, max: 0.1, step: 0.0005, initial: E.beta }),
+  alphaL: Object.freeze({ min: 0.001, max: 0.1, step: 0.0005, initial: E.alphaL }),
+  a: Object.freeze({ min: 0.1, max: 3, step: 0.05, initial: E.a }),
+  p: Object.freeze({ min: 0.5, max: 3, step: 0.05, initial: E.p }),
+  alphaE: Object.freeze({ min: 0.001, max: 0.06, step: 0.0005, initial: E.alphaE }),
+  A: Object.freeze({ min: 0.25, max: 6, step: 0.05, initial: E.A }),
+  kH: Object.freeze({ min: 5, max: 600, step: 5, initial: E.kH }),
 });
 
 /**
  * H_ref of the power model, fixed and not adjusted (Parámetros de f(H), §7: a, p and H_ref
- * compensate each other, so H_ref is fixed before estimating the rest).
+ * compensate each other, so H_ref is fixed before estimating the rest): the engine H* = 1/β.
  */
-export const FIXED_H_REF = 20;
+export const FIXED_H_REF = E.hRef;
 
 /** Models recomputed from the series (the distance dose needs SPL, which the series does not keep). */
 export const RECOMPUTED_MODELS = DOSE_MODELS;
