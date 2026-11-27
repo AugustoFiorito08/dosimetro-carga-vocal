@@ -82,26 +82,32 @@ describe('IndexedDB schema v2 (migration)', () => {
     };
   }
 
-  it('is version 2 with the workdays and outbox stores', () => {
-    assert.equal(DB_VERSION, 2);
-    assert.deepEqual(STORES, { workdays: 'workdays', outbox: 'outbox' });
+  it('is version 3 with the workdays, outbox and frames stores', () => {
+    assert.equal(DB_VERSION, 3);
+    assert.deepEqual(STORES, { workdays: 'workdays', outbox: 'outbox', frames: 'frames' });
   });
 
   it('a new database gets both stores', () => {
     const db = fakeDb();
     upgradeDatabase(db, 0);
-    assert.deepEqual(db.created, [['workdays', { keyPath: 'id' }], ['outbox', { keyPath: 'key' }]]);
+    assert.deepEqual(db.created, [['workdays', { keyPath: 'id' }], ['outbox', { keyPath: 'key' }], ['frames', { keyPath: 'workdayId' }]]);
   });
 
   it('upgrading from v1 only adds outbox and never recreates (empties) workdays', () => {
     const db = fakeDb(['workdays']);
     upgradeDatabase(db, 1);
-    assert.deepEqual(db.created, [['outbox', { keyPath: 'key' }]]);
+    assert.deepEqual(db.created, [['outbox', { keyPath: 'key' }], ['frames', { keyPath: 'workdayId' }]]);
+  });
+
+  it('upgrading from v2 only adds frames', () => {
+    const db = fakeDb(['workdays', 'outbox']);
+    upgradeDatabase(db, 2);
+    assert.deepEqual(db.created, [['frames', { keyPath: 'workdayId' }]]);
   });
 
   it('is idempotent on an already current database', () => {
-    const db = fakeDb(['workdays', 'outbox']);
-    upgradeDatabase(db, 2);
+    const db = fakeDb(['workdays', 'outbox', 'frames']);
+    upgradeDatabase(db, 3);
     assert.deepEqual(db.created, []);
   });
 });

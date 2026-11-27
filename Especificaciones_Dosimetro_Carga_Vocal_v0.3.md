@@ -630,7 +630,7 @@ La docente usa una vista propia, pensada para el celular, con el mismo motor de 
 
 **La actividad la marca la docente.** La app no la detecta: los eventos automáticos (§12.2) describen el patrón acústico, no la actividad.
 
-**Al terminar**: el mismo orden que al empezar, sin los ejemplos de referencia: las dos pruebas acústicas con el texto a la vista (obligatorias), el esfuerzo (Borg CR10, obligatorio), el cansancio de la voz (EVA, obligatoria), la sequedad y la molestia, y guardado. Una muestra rechazada por calidad no cuenta: hay que repetirla; una guardada con advertencia sí cuenta. En la vista técnica las pruebas acústicas y el esfuerzo no son obligatorios: si faltan, al iniciar o al guardar la jornada se avisa y se puede seguir. El resumen muestra duración, tiempo hablado, F0 mediana, cambio de fatiga, la comparación de la jornada, lo que marcó y el estado del envío, dicho como es: «guardada solo en este celular» si el envío no está activado; si lo está, «pendiente de envío» (se manda solo cuando hay conexión, por HTTPS, solo el resumen y sin audio), «enviada» o «la base del estudio no la aceptó».
+**Al terminar**: el mismo orden que al empezar, sin los ejemplos de referencia: las dos pruebas acústicas con el texto a la vista (obligatorias), el esfuerzo (Borg CR10, obligatorio), el cansancio de la voz (EVA, obligatoria), la sequedad y la molestia, y guardado. Una muestra rechazada por calidad no cuenta: hay que repetirla; una guardada con advertencia sí cuenta. En la vista técnica las pruebas acústicas y el esfuerzo no son obligatorios: si faltan, al iniciar o al guardar la jornada se avisa y se puede seguir. El resumen muestra duración, tiempo hablado, F0 mediana, cambio de fatiga, la comparación de la jornada, lo que marcó y el estado del envío, dicho como es: «guardada solo en este celular» si el envío no está activado; si lo está, «pendiente de envío» (se manda sola cuando hay conexión, por HTTPS, el resumen y los datos por trama, sin audio), «enviada» o «la base del estudio no la aceptó».
 
 **Partitura** simplificada: cuándo habló, volumen de la voz y carga acumulada, con explicaciones en lenguaje llano, más la lista de lo que marcó. **Mi jornada** muestra la jornada elegida (carga acumulada, recuperación con avisos y calendario de §24, y eventos) y la lista de jornadas guardadas en el celular con su estado de envío.
 
@@ -692,7 +692,9 @@ La conservación de scores continuos permite recalcular decisiones con nuevos um
 
 El envío de resúmenes a una base de datos que alimente un tablero analítico es **optativo y está desactivado por defecto**. Se activa en cada equipo (*opt-in*), solo con consentimiento informado y con la aprobación ética del protocolo que lo prevea. Sin esa activación, nada sale del navegador.
 
-**Qué se envía.** Solo el resumen de la jornada (`vd-des-workday/1`). El contrato es una lista cerrada de campos (`SYNC_FIELDS`, `src/store/workday-sync.js`):
+**Consentimiento en la app.** El panel de envío muestra la sección de datos del consentimiento: qué se mide, qué se registra, qué no se registra nunca, qué se envía, para qué se usa, conservación, acceso y retiro. La casilla «Leí esta sección y acepto…» es la que activa el envío: sin ella no se puede activar. Se guarda en el navegador, con la configuración, la versión aceptada (`vd-consent-datos-v2`, `CONSENT_VERSION` en `src/store/sync-settings.js`) y la fecha. Destildarla y guardar retira el consentimiento: el envío se detiene y la aceptación se borra. Una configuración guardada antes del consentimiento, o con una versión anterior, se carga desactivada hasta que se acepte la versión vigente. Cambiar lo que la app registra o envía exige una versión nueva del texto. Conservación: mientras dure el proyecto y hasta 10 años después de su finalización, para reanalizar las jornadas con nuevos modelos; después se borran. Contacto: el equipo entrega por escrito el nombre, el correo y el teléfono del responsable del estudio (la v1 tenía ambos campos por completar).
+
+**Qué se envía.** El resumen de la jornada (`vd-des-workday/1`) y, después de él, sus datos primarios por trama (`vd-des-frames/1`, ver abajo). El contrato del resumen es una lista cerrada de campos (`SYNC_FIELDS`, `src/store/workday-sync.js`):
 
 - identificación: `schema`, `id` y, si existen, `sessionUuid` y `deviceId`;
 - códigos seudónimos: `participantId`, `schoolId`, `classroom`;
@@ -706,7 +708,7 @@ Todo campo fuera de la lista se descarta al armar el envío y se rechaza al reci
 **Qué no se envía nunca.**
 
 - Audio, ni crudo ni filtrado.
-- Tramas: el CSV por trama solo se exporta a mano (§13).
+- El CSV por trama completo (§13): solo se exporta a mano. De cada trama se envían únicamente los datos primarios de `vd-des-frames/1`.
 - La plantilla del hablante (prototipos, distancias, rango de F0 del enrolamiento).
 - Nombres ni datos de contacto.
 
@@ -770,7 +772,24 @@ Como resguardo, el contrato rechaza cualquier arreglo de más de 100 valores num
   - rechaza las sesiones en curso;
   - nunca sobrescribe la fila de otra escuela.
 - **Acceso:** los roles `anon` y `authenticated` no tienen permisos directos sobre las tablas. Quienes analizan leen por RLS, limitados a su escuela (`analysts`).
-- **Retiro del consentimiento:** la función `delete_participant_workdays` borra todo lo de un código. Solo puede usarla el rol de servicio.
+- **Retiro del consentimiento:** la función `delete_participant_workdays` borra todo lo de un código, también sus datos por trama (se borran en cascada con su jornada). Solo puede usarla el rol de servicio.
+
+**Datos primarios por trama (`vd-des-frames/1`).** Para poder recalcular las dosis con otros parámetros, otra A₀ u otro exponente q sin volver a medir (documento «05 - Recalibración de los parámetros»), cada jornada guarda, además del resumen, los datos primarios de cada trama analizada (unas 23 por segundo):
+
+| Dato | Resolución |
+|---|---|
+| Nivel: 20·log10 de la RMS digital | 0,005 dB |
+| F0 | 0,1 Hz (0 si no hay) |
+| Decisiones V, W, Q y Φ | 0 o 1 |
+| Categoría de la trama | una de las cinco categorías de clasificación |
+| SNR | 1 dB |
+
+Por sesión se guardan la duración de trama, la frecuencia de muestreo, el tamaño de trama, las pausas (índice de trama y segundos), cómo se pasa de la RMS a la presión (coeficiente de calibración, o la RMS A₀ de la voz habitual), P₀, las unidades y la versión del algoritmo. No hay audio, espectro, plantilla del hablante ni el nombre del micrófono (puede contener nombres de personas). Son 6 bytes por trama: unos 4 MB por 8 h antes de comprimir y, en el peor caso, unos 3,3 MB comprimidos y en base64.
+
+- **En el celular:** al guardar la jornada, sus tramas quedan en el almacén `frames` de IndexedDB (esquema v3). Se borran con la jornada y con «Borrar jornadas». Las jornadas autoguardadas y recuperadas tras un cierre inesperado no tienen tramas: solo se guardan al guardar la jornada.
+- **Envío:** solo con el envío activado. Las tramas salen después de su jornada, en partes de menos de 2 MB (`vd-des-frames-part/1`) a la función `upload_workday_frames`, que valida el mismo token y que la jornada ya esté recibida y sea de la escuela del token. Se guardan en `workday_frames`, una fila por parte, con clave (clave de envío, parte): reenviar reemplaza, no duplica. Si falla una parte, el reintento sigue desde esa parte. Confirmado el envío, se borran del celular.
+- **Recálculo:** `src/stats/frame-recompute.js` recorre las tramas con las mismas reglas del motor. Con los parámetros de la grabación reproduce las dosis guardadas: la diferencia sale solo del redondeo del nivel, como mucho 0,06 % por trama y del orden de 1e-6 en una jornada con niveles variados. Permite cambiar los parámetros de f(H), A₀ y q (I = (P/P₀)^q).
+- **Consentimiento:** el texto del consentimiento debe decir que, además del resumen, se envían el nivel y la F0 de cada trama, sin audio.
 
 ## 15. Instalación y ejecución
 

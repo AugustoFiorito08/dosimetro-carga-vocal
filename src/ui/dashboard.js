@@ -11,7 +11,8 @@ import { buildWorkday, validateCode } from '../store/workday.js';
 import { STANDARD_TEXT_ID } from '../store/voice-assessment.js';
 import { createIndexedDbRepository } from '../store/workday-repository.js';
 import { createIndexedDbOutbox } from '../store/outbox.js';
-import { createSyncingRepository } from '../store/sync-service.js';
+import { createSyncingRepository, enqueueFrames } from '../store/sync-service.js';
+import { syncKey } from '../store/workday-sync.js';
 import { createOptInRepository } from '../store/sync-settings.js';
 import { bindAutosaveTriggers, createWorkdayAutosaver, recoverCheckpoints } from '../store/workday-autosave.js';
 import { createBoards } from './boards/boards.js';
@@ -23,6 +24,9 @@ import { createLoadChart, zoneFor } from './load-chart.js';
 import { createScoreChart } from './score-chart.js';
 import { createScoreSeries } from './score-series.js';
 import { createSecondSeries } from '../store/second-series.js';
+import { createFrameLog } from '../store/frame-record.js';
+import { frameSizeFor } from '../audio/frame-accumulator.js';
+import { createIndexedDbFrameStore, withFrameDeletion } from '../store/frame-store.js';
 import { createSyncPanel } from './sync-panel.js';
 import { createVoiceAssessmentPanel } from './voice-assessment-panel.js';
 import { createTeacherApp, initialView } from './teacher/teacher-app.js';
@@ -168,6 +172,8 @@ const SCORE_DOSE_NAMES = {
 const scoreSeries = createScoreSeries();
 /** Per-second phonated time and F0·I of the session, kept in the workday (perSecond). */
 const secondSeries = createSecondSeries();
+/** Primary frames of the session (level, F0, V/W/Q/Φ, category, SNR), kept with the saved workday. */
+let frameLog = null;
 const score = createScoreChart($('tab-score'), { series: scoreSeries });
 const scoreDose = $('score-dose');
 
@@ -201,6 +207,7 @@ function recordScoreFrame({ analysis: a, load, timestamp }) {
     h: load.h, doses: load.doses, distanceDose: load.distanceDose,
   });
   secondSeries.push({ dt: a.dt, phi: load.lastFrame?.phi ?? a.phi, f0: a.f0, intensity: load.lastFrame?.intensity ?? 0 });
+  frameLog?.push(a, timestamp);
   if (scoreSeries.length === 1) $('score-empty').hidden = true;
   score.invalidate();
 }
@@ -219,16 +226,19 @@ function downloadText(text, fileName, type) {
 // the outbox only while the sync panel has it enabled.
 const localWorkdays = createIndexedDbRepository();
 const outbox = createIndexedDbOutbox();
-const syncPanel = createSyncPanel({ $, outbox, repository: localWorkdays, onPurged: () => boards.refresh() });
+// Primary frames of each saved workday (vd-des-frames/1): deleted with their workday, sent
+// after it while the sync is enabled.
+const frameStore = createIndexedDbFrameStore();
+const syncPanel = createSyncPanel({ $, outbox, repository: localWorkdays, frames: frameStore, onPurged: () => boards.refresh() });
 // A rebuilt record of a saved workday keeps the recovery points recorded after it (hito 10).
-const workdayRepository = preserveRecovery(createOptInRepository({
+const workdayRepository = withFrameDeletion(preserveRecovery(createOptInRepository({
   repository: localWorkdays,
   syncingRepository: createSyncingRepository(localWorkdays, outbox, {
     onEnqueued: () => syncPanel.flush(),
     onError: (error) => say(`La jornada quedó guardada en este equipo, pero no se pudo encolar su envío: ${error.message}`, 'error'),
   }),
   isEnabled: syncPanel.isEnabled,
-}));
+})), frameStore);
 // Recovery reminders (hito 10): a notification while the app is open, the in-app message
 // otherwise; the calendar file covers the app being closed.
 const recoveryNotifier = createRecoveryNotifier({
@@ -347,6 +357,35 @@ function currentWorkday({ lenient = false } = {}) {
   };
   return buildWorkday({ meta, load: manager.session.load, series: scoreSeries, seconds: secondSeries, startedAt: sessionStartedAt, algorithmVersion: ALGORITHM_VERSION, source: 'live' });
 }
+/** Frame log of a session: how its P_k is built (calibration or own-voice A_0), P_0 and units. */
+function newFrameLog(session, load) {
+  const calibration = session.sessionCalibration;
+  const pressureScale = calibration
+    ? { mode: 'calibrated', coefficient: calibration.coefficient }
+    : session.voiceReference?.rms > 0 ? { mode: 'own_voice', a0Rms: session.voiceReference.rms } : { mode: 'relative' };
+  return createFrameLog({
+    sampleRate: session.sampleRate,
+    frameSize: frameSizeFor(session.sampleRate),
+    pressureScale,
+    referencePressure: load.referencePressure,
+    units: load.units,
+    algorithmVersion: ALGORITHM_VERSION,
+  });
+}
+/** Keeps the primary frames of a saved workday; the workday stays saved if this fails. */
+async function saveFrames(workday) {
+  const encoded = frameLog?.encode();
+  if (!encoded) return;
+  try {
+    await frameStore.put({ workdayId: workday.id, ...encoded });
+    if (syncPanel.isEnabled()) {
+      await enqueueFrames(outbox, { workdayId: workday.id, syncKey: syncKey(workday) });
+      syncPanel.flush();
+    }
+  } catch (error) {
+    say(`La jornada quedó guardada, pero no sus datos por trama: ${error.message}`, 'error');
+  }
+}
 /** Saves the workday of the last session; resolves to it, or null when it could not be saved. */
 async function saveWorkday() {
   try {
@@ -357,6 +396,7 @@ async function saveWorkday() {
     } else {
       await boards.save(workday);
     }
+    await saveFrames(workday);
     workdaySaved = true;
     refreshReminders();
     setText($('jr-status'), `Guardada ${workday.id}`);
@@ -613,6 +653,7 @@ async function startSession() {
   try {
     manager.session.setDistanceDoseOptions(distanceDoseOptionsFromForm());
     const load = manager.session.start();
+    frameLog = newFrameLog(manager.session, load);
     chart.reset({ beta: load.params.beta });
     sessionStartedAt = new Date();
     resetScore(load, sessionStartedAt);

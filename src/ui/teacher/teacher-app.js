@@ -506,7 +506,7 @@ export function createTeacherApp(deps) {
     const item = items.find((i) => i.workdayId === w.id);
     if (!item) return 'Enviada a la base del estudio.';
     if (item.state === 'rejected') return 'La base del estudio no la aceptó. Avisale al equipo de investigación.';
-    return 'Pendiente de envío: se manda sola cuando haya conexión, por conexión segura (HTTPS), solo el resumen y sin audio.';
+    return 'Pendiente de envío: se manda sola cuando haya conexión, por conexión segura (HTTPS), el resumen y los datos por trama (nivel y F0), sin audio.';
   }
   async function renderSync(w) {
     setText($('t-summary-sync'), await syncText(w));

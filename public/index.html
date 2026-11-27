@@ -405,7 +405,7 @@
         <details class="sync" id="sync-panel">
           <summary>Envío a la base analítica <span class="sync-badge" id="sync-badge">Desactivado</span></summary>
           <form id="sync-form" class="sync-form" novalidate>
-            <p class="hint">Optativo y desactivado por defecto. Activalo solo con consentimiento informado. Se envía el resumen de cada jornada guardada (sin audio); al confirmarse el envío, el resumen se borra de este equipo. La URL, la clave y el token quedan solo en este navegador.</p>
+            <p class="hint">Optativo y desactivado por defecto: se activa solo aceptando el consentimiento de abajo. La URL, la clave y el token quedan solo en este navegador.</p>
             <div class="field">
               <label for="sync-url">URL del proyecto</label>
               <input id="sync-url" type="url" inputmode="url" placeholder="https://&lt;proyecto&gt;.supabase.co" autocomplete="off" spellcheck="false" aria-describedby="sync-url-error" />
@@ -421,7 +421,53 @@
               <input id="sync-token" type="password" autocomplete="off" spellcheck="false" aria-describedby="sync-token-error" />
               <p class="hint" data-alert="true" id="sync-token-error"></p>
             </div>
-            <label class="sync-toggle"><input id="sync-enabled" type="checkbox" /> Activar el envío en este equipo</label>
+            <section class="sync-consent" aria-labelledby="sync-consent-title">
+              <h3 id="sync-consent-title">Consentimiento: qué datos se registran y se envían</h3>
+              <div class="sync-consent-text" tabindex="0">
+                <h4>Qué se mide y cómo</h4>
+                <p>Durante su jornada de trabajo, una aplicación en su celular mide cuánto usa la voz, sin grabarla. El micrófono de diadema, a 2–3 cm de la boca, capta el sonido; la aplicación lo analiza en el momento, unas 23 veces por segundo, y descarta el sonido de inmediato.</p>
+                <p>Antes y después de la jornada usted hace dos pruebas breves de voz (una vocal /a/ sostenida y la lectura de un texto) y responde preguntas sobre esfuerzo, cansancio, sequedad y molestia de la voz. Después de la jornada puede registrar cómo se recupera su voz en horarios fijos.</p>
+                <h4>Qué datos se registran</h4>
+                <p>Se registran solo números derivados de su voz, identificados con códigos y nunca con su nombre.</p>
+                <ul>
+                  <li><strong>Identificación:</strong> códigos de docente, escuela y aula; un código al azar de la sesión y otro del equipo.</li>
+                  <li><strong>Resumen de la jornada:</strong> fecha y hora de inicio, duración, tiempo hablado, dosis vocales, tono (F0) y nivel de voz resumidos, carga por minuto.</li>
+                  <li><strong>Serie por segundo:</strong> por cada segundo, cuánto se habló y el producto de tono por intensidad.</li>
+                  <li><strong>Datos por trama:</strong> por cada fragmento de unos 40 ms, nivel de la señal, tono (F0), si hubo voz y si era la suya, calidad de la señal y relación señal-ruido.</li>
+                  <li><strong>Pruebas de voz:</strong> medidas acústicas de la vocal y la lectura (por ejemplo CPPS, F0, HNR) y espectros promedio.</li>
+                  <li><strong>Cuestionarios:</strong> esfuerzo (escala Borg CR10), cansancio, sequedad y molestia (escalas de 0 a 100), antes y después; cansancio durante la recuperación.</li>
+                  <li><strong>Contexto:</strong> actividades que usted marca (por ejemplo, recreo o explicación) y cómo el navegador procesa el micrófono.</li>
+                </ul>
+                <p>Los datos por trama permiten volver a calcular las dosis con otras fórmulas sin repetir la medición. Con ellos no se puede reconstruir lo que usted dijo.</p>
+                <h4>Qué no se registra nunca</h4>
+                <ul>
+                  <li>Audio: ni la jornada, ni las pruebas de voz, ni ningún fragmento. Se analiza en el momento y se borra.</li>
+                  <li>La plantilla con la que la aplicación reconoce su voz: queda solo durante la sesión y no se guarda ni se envía.</li>
+                  <li>Su nombre, sus datos de contacto o el nombre de su micrófono o de su celular.</li>
+                </ul>
+                <h4>Envío a la base del estudio</h4>
+                <p>Si usted acepta, los datos anteriores se envían a la base de datos del estudio; si no, quedan solo en su celular.</p>
+                <ul>
+                  <li>Se envía el resumen de cada jornada guardada y, después, sus datos por trama: el nivel y el tono (F0) de cada fragmento, sin audio.</li>
+                  <li>El envío usa una conexión cifrada (HTTPS) y un permiso de subida propio de su escuela.</li>
+                  <li>Una vez confirmado el envío, esos datos se borran de su celular.</li>
+                  <li>Una jornada de 8 horas ocupa como máximo unos 3,3 MB.</li>
+                </ul>
+                <h4>Uso de los datos</h4>
+                <p>Los datos se usan solo para investigar la relación entre el uso de la voz y la fatiga vocal: para comparar distintas formas de calcular la carga vocal con el cansancio y la recuperación que usted informa, y para volver a calcular las dosis con otros parámetros sin que usted tenga que medir de nuevo.</p>
+                <p>Los valores que muestra la aplicación son provisionales: no son un diagnóstico ni tienen límites sanitarios validados. Los resultados se publican agrupados, sin códigos que permitan identificarlo.</p>
+                <h4>Conservación, acceso y retiro del consentimiento</h4>
+                <p>Usted puede retirar su consentimiento en cualquier momento, sin dar explicaciones y sin consecuencias.</p>
+                <ul>
+                  <li><strong>Acceso:</strong> solo el equipo de investigación autorizado, y cada analista únicamente a los datos de su escuela.</li>
+                  <li><strong>Conservación:</strong> los datos se conservan mientras dure el proyecto y hasta 10 años después de su finalización, para volver a analizarlos con nuevos modelos de carga vocal sin repetir mediciones. Después se borran.</li>
+                  <li><strong>Retiro:</strong> si lo pide, se borra de la base del estudio todo lo asociado a su código, incluidos los datos por trama. En su celular, la opción «Borrar jornadas» elimina lo que todavía no se envió.</li>
+                  <li><strong>Contacto:</strong> el equipo de investigación le entrega por escrito el nombre, el correo y el teléfono del responsable del estudio.</li>
+                </ul>
+              </div>
+              <label class="sync-toggle sync-consent-accept"><input id="sync-enabled" type="checkbox" /> Leí esta sección y acepto que mis datos se registren en este celular y se envíen a la base del estudio, incluidos los datos por trama, sin audio.</label>
+              <p class="hint" id="sync-consent-status">Si no lo acepta, sus datos quedan solo en este celular. Para retirar el consentimiento, destilde la casilla y guarde: el envío se detiene.</p>
+            </section>
             <div class="sync-actions">
               <button type="submit" class="btn primary">Guardar</button>
               <button id="sync-flush" type="button" class="btn" disabled>Enviar ahora</button>
