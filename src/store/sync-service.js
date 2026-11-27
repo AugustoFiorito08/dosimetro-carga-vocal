@@ -169,7 +169,14 @@ export function createSyncService({
    * failure (retried later from the failed part), null when it has to wait for its workday.
    */
   async function sendFramesItem(item) {
-    if (await outbox.get(item.syncKey)) return null; // the workday goes first (pending or rejected)
+    const workday = await outbox.get(item.syncKey);
+    if (workday?.state === 'rejected') {
+      // The server will never take frames whose workday it does not have: reject them with it.
+      // Saving the workday again queues both anew.
+      await markFailed(item, new Error('la jornada fue rechazada; sus tramas no se envían'), true);
+      return false;
+    }
+    if (workday) return null; // the workday goes first
     const entry = frames ? await frames.get(item.workdayId) : null;
     if (!entry) {
       await outbox.removeIfRev(item.key, item.rev); // nothing left to send (deleted or never kept)

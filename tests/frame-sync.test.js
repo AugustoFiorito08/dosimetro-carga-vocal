@@ -118,11 +118,30 @@ describe('sync service: frames after their workday, resumable by part', () => {
   it('frames wait while their workday is still queued', async () => {
     const s = setup();
     await s.frames.put(frameEntry());
+    await s.outbox.put({ ...workdayItem(s.now), nextAttemptAt: s.now().getTime() + 60000 });
+    await enqueueFrames(s.outbox, { workdayId: KEY, syncKey: KEY, now: s.now });
+    const r = await s.service.flush();
+    assert.deepEqual(s.sent, []);
+    assert.deepEqual(r, { sent: 0, failed: 0, skipped: null });
+    const frames = (await s.outbox.list()).find((i) => i.kind === 'frames');
+    assert.equal(frames.state, 'pending');
+  });
+
+  it('the frames of a rejected workday are rejected with it, not left waiting', async () => {
+    const s = setup();
+    await s.frames.put(frameEntry());
     await s.outbox.put({ ...workdayItem(s.now), state: 'rejected' });
     await enqueueFrames(s.outbox, { workdayId: KEY, syncKey: KEY, now: s.now });
-    await s.service.flush();
+    const r = await s.service.flush();
     assert.deepEqual(s.sent, []);
-    assert.equal((await s.outbox.list()).length, 2);
+    assert.equal(r.failed, 1);
+    const frames = (await s.outbox.list()).find((i) => i.kind === 'frames');
+    assert.equal(frames.state, 'rejected');
+    assert.match(frames.lastError, /jornada.*rechazada/);
+    assert.deepEqual(await s.service.pending(), { pending: 0, rejected: 2 });
+    assert.ok(await s.frames.get(KEY), 'the local frames are kept');
+    await enqueueFrames(s.outbox, { workdayId: KEY, syncKey: KEY, now: s.now }); // saved again
+    assert.equal((await s.outbox.get(`frames:${KEY}`)).state, 'pending');
   });
 
   it('a failed part is retried later from that part, not from the start', async () => {
