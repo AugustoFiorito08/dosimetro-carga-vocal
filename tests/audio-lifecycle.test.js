@@ -222,6 +222,9 @@ describe('audio manager lifecycle (injected browser fakes)', () => {
     const enrol = info.session.enroll();
     send(harmonic(150, 16000, N), framesFor(15));
     await enrol;
+    const ref = info.session.captureVoiceReference();
+    send(harmonic(150, 16000, N), framesFor(30));
+    await ref;
     info.session.start();
     send(harmonic(150, 16000, N), 10);
   }

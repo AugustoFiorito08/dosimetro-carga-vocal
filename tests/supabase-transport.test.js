@@ -264,6 +264,11 @@ describe('reference SQL (supabase/workday_sync.sql)', () => {
     assert.match(lower, /in_progress/);
   });
 
+  it('accepts the per-second series only as two arrays of at most one day', () => {
+    assert.match(lower, /jsonb_array_length\(rec #> '\{persecond,phonation\}'\) > 86400/);
+    assert.match(lower, /jsonb_array_length\(rec #> '\{persecond,f0i\}'\)/);
+  });
+
   it('lets analysts read through RLS and holds no secret', () => {
     assert.match(lower, /create policy [\s\S]*on public\.workday_sync for select to authenticated/);
     assert.doesNotMatch(sql, /eyJ[A-Za-z0-9_-]{10,}/, 'no JWT / key in the file');

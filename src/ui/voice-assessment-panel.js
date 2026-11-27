@@ -4,7 +4,7 @@ import { analyseAndDiscard } from '../audio/assessment-runner.js';
 import { MODES } from '../audio/session-controller.js';
 import { buildAcousticCsv } from '../export/acoustic-exporter.js';
 import {
-  RECORDING_SECONDS, STANDARD_TEXT, TIMEPOINTS, VAS_ITEMS, comparisonRows, createAssessment, restoreAssessment, withResult, withVas, workdayAssessment,
+  BORG_SCALE, RECORDING_SECONDS, STANDARD_TEXT, TIMEPOINTS, VAS_ITEMS, comparisonRows, createAssessment, restoreAssessment, withBorg, withResult, withVas, workdayAssessment,
 } from '../store/voice-assessment.js';
 
 const STORAGE_KEY = 'dosimetro.voice-assessment';
@@ -66,6 +66,19 @@ export function createVoiceAssessmentPanel({ $, say, getSession, getMicrophone, 
         }
       });
     }
+    // Vocal effort: one of the ten phrases of the protocol (Borg CR10); the value is the key's.
+    const borg = $(`va-${tp.toLowerCase()}-borg`);
+    borg.replaceChildren(new Option('Sin elegir', ''), ...BORG_SCALE.map((o) => new Option(o.label, String(o.value))));
+    borg.value = state[tp].borg === null ? '' : String(state[tp].borg);
+    borg.addEventListener('change', () => {
+      try {
+        state = withBorg(state, tp, borg.value === '' ? null : Number(borg.value));
+        persist();
+        renderTable();
+      } catch (error) {
+        say(error.message, 'error');
+      }
+    });
     for (const task of ['VOWEL', 'SPEECH']) {
       $(`va-${tp.toLowerCase()}-${task === 'VOWEL' ? 'vowel' : 'speech'}`).addEventListener('click', () => record(tp, task));
     }
@@ -154,11 +167,16 @@ export function createVoiceAssessmentPanel({ $, say, getSession, getMicrophone, 
         $(`va-${tp.toLowerCase()}-speech`).disabled = !idle;
       }
     },
+    /** Whether both guided takes (/a/ and the text) of a timepoint were accepted. */
+    samplesDone(timepoint) {
+      return Boolean(state[timepoint].VOWEL && state[timepoint].SPEECH);
+    },
     /** The assessment for the workday record, or null when nothing was done. */
     forWorkday() {
       const a = workdayAssessment(state);
       const anyVas = Object.values(a.vas).some(({ pre, post }) => pre !== null || post !== null);
-      return a.results.length || anyVas ? a : null;
+      const anyBorg = a.effortBorg.pre !== null || a.effortBorg.post !== null;
+      return a.results.length || anyVas || anyBorg ? a : null;
     },
   };
 }

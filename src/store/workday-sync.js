@@ -3,7 +3,9 @@
 // envelope and their validation, usable on both ends (the browser builds, the backend
 // checks). The envelope is the JSON export one (vd-des-workdays/1), so a manual export and
 // a sync carry the same format and either can be loaded the same way.
-import { MAX_DERIVED_VALUES } from './voice-assessment.js';
+import { BORG_VALUES, MAX_DERIVED_VALUES } from './voice-assessment.js';
+import { RECOVERY_SLOTS } from './recovery.js';
+import { MAX_SERIES_SECONDS } from './second-series.js';
 import {
   CHECKPOINT_STATUSES,
   DEVICE_ID_PATTERN,
@@ -26,8 +28,8 @@ export const SYNC_FIELDS = Object.freeze([
   'schema', 'id', 'sessionUuid', 'deviceId',
   'participantId', 'schoolId', 'classroom',
   'date', 'startedAt', 'durationS', 'phonationS', 'validRatio',
-  'doses', 'hMax', 'f0', 'level', 'units', 'ownVoiceRefDbfs',
-  'timeline', 'events', 'fatigue', 'assessment',
+  'doses', 'hMax', 'f0', 'level', 'units', 'ownVoiceRefDbfs', 'ownVoiceRef', 'capture',
+  'timeline', 'perSecond', 'events', 'fatigue', 'assessment',
   'algorithmVersion', 'source', 'checkpoint',
 ]);
 
@@ -79,7 +81,9 @@ export const syncKey = (workday) => workday.sessionUuid ?? workday.id;
 
 /**
  * Receiving side: a valid workday (validateWorkday), syncable, with no field outside the
- * contract and nothing long enough to be audio outside the per-minute timeline.
+ * contract and nothing long enough to be audio outside the per-minute timeline and the
+ * per-second series (two derived numbers per second, validated by validateWorkday: at 1 Hz
+ * they cannot hold audio).
  * @returns the record unchanged
  */
 export function validateSyncRecord(record) {
@@ -88,7 +92,7 @@ export function validateSyncRecord(record) {
   if (unknown !== undefined) throw new RangeError(`unknown field "${unknown}" in a synced workday`);
   if (!isSyncable(record)) throw new RangeError(`workday ${record.id} is still in progress; only saved or recovered workdays are sent`);
   validateTimeline(record.timeline);
-  const { timeline: _timeline, ...rest } = record;
+  const { timeline: _timeline, perSecond: _perSecond, ...rest } = record;
   if (longestNumericArray(rest) > MAX_DERIVED_VALUES) {
     throw new RangeError(`workday ${record.id} holds an array longer than ${MAX_DERIVED_VALUES} values: audio-like content is never sent`);
   }
@@ -133,13 +137,14 @@ const isoDateTime = { type: 'string', format: 'date-time' };
 /**
  * JSON Schema (2020-12) of one synced workday, for the backend. validateSyncRecord() is the
  * reference: the schema mirrors it, except the audio guard (no array of numbers longer
- * than MAX_DERIVED_VALUES outside the timeline), which JSON Schema cannot express in general.
+ * than MAX_DERIVED_VALUES outside the timeline and the per-second series), which JSON Schema
+ * cannot express in general, and the equal length of the two per-second arrays.
  */
 export const WORKDAY_SYNC_JSON_SCHEMA = Object.freeze({
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   $id: 'vd-des-workday-sync/1',
   title: 'Synced workday summary (vd-des-workday/1)',
-  $comment: `No audio, frames or speaker template. Arrays of numbers outside "timeline" hold at most ${MAX_DERIVED_VALUES} values.`,
+  $comment: `No audio, frames or speaker template. Arrays of numbers outside "timeline" and "perSecond" hold at most ${MAX_DERIVED_VALUES} values.`,
   type: 'object',
   additionalProperties: false,
   required: ['schema', 'id', 'participantId', 'schoolId', 'classroom', 'date', 'durationS', 'phonationS', 'source'],
@@ -162,11 +167,42 @@ export const WORKDAY_SYNC_JSON_SCHEMA = Object.freeze({
     level: percentiles,
     units: { enum: ['calibrated', 'normalized', 'relative'] },
     ownVoiceRefDbfs: numberOrNull,
+    ownVoiceRef: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        method: { type: ['string', 'null'], maxLength: 64 },
+        textId: { type: ['string', 'null'], maxLength: 64 },
+        p10Dbfs: numberOrNull,
+        p50Dbfs: numberOrNull,
+        p90Dbfs: numberOrNull,
+        durationS: numberOrNull,
+        validS: numberOrNull,
+      },
+    },
+    capture: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        autoGainControl: { type: ['boolean', 'null'] },
+        noiseSuppression: { type: ['boolean', 'null'] },
+        echoCancellation: { type: ['boolean', 'null'] },
+      },
+    },
     timeline: {
       type: 'object',
       properties: {
         minutes: { type: 'array', items: { type: 'integer' }, maxItems: MAX_TIMELINE_MINUTES },
         doses: { type: 'object', additionalProperties: { type: 'array', items: numberOrNull, maxItems: MAX_TIMELINE_MINUTES } },
+      },
+    },
+    perSecond: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['phonation', 'f0I'],
+      properties: {
+        phonation: { type: 'array', items: { type: 'number', minimum: 0, maximum: 1 }, maxItems: MAX_SERIES_SECONDS },
+        f0I: { type: 'array', items: { type: 'number', minimum: 0 }, maxItems: MAX_SERIES_SECONDS },
       },
     },
     events: {
@@ -183,12 +219,37 @@ export const WORKDAY_SYNC_JSON_SCHEMA = Object.freeze({
         },
       },
     },
-    fatigue: { type: 'object', properties: { pre: vas, post: vas } },
+    fatigue: {
+      type: 'object',
+      properties: {
+        pre: vas,
+        post: vas,
+        recovery: {
+          type: 'array',
+          maxItems: RECOVERY_SLOTS.length,
+          items: {
+            type: 'object',
+            required: ['slot', 'at', 'minutes', 'value'],
+            properties: {
+              slot: { enum: RECOVERY_SLOTS.map((s) => s.id) },
+              at: { type: 'string', format: 'date-time' },
+              minutes: { type: 'number', minimum: 0 },
+              value: { type: 'number', minimum: 0, maximum: 100 },
+            },
+            additionalProperties: false,
+          },
+        },
+      },
+    },
     assessment: {
       type: ['object', 'null'],
       properties: {
         textId: { type: 'string' },
         vas: { type: 'object', additionalProperties: { type: 'object', properties: { pre: vas, post: vas } } },
+        effortBorg: {
+          type: 'object',
+          properties: { pre: { type: ['number', 'null'], enum: [...BORG_VALUES, null] }, post: { type: ['number', 'null'], enum: [...BORG_VALUES, null] } },
+        },
         results: {
           type: 'array',
           maxItems: 4,

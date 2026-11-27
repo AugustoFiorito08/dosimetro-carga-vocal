@@ -8,19 +8,24 @@ import { toDb } from '../dsp/signal-quality.js';
 import { ALGORITHM_VERSION, csvFileName, downloadCsv, downloadCsvGzip, supportsGzip } from '../export/csv-exporter.js';
 import { detectEvents } from '../store/auto-events.js';
 import { buildWorkday, validateCode } from '../store/workday.js';
+import { STANDARD_TEXT_ID } from '../store/voice-assessment.js';
 import { createIndexedDbRepository } from '../store/workday-repository.js';
 import { createIndexedDbOutbox } from '../store/outbox.js';
 import { createSyncingRepository } from '../store/sync-service.js';
 import { createOptInRepository } from '../store/sync-settings.js';
 import { bindAutosaveTriggers, createWorkdayAutosaver, recoverCheckpoints } from '../store/workday-autosave.js';
 import { createBoards } from './boards/boards.js';
+import { preserveRecovery } from '../store/recovery.js';
+import { createRecoveryNotifier } from '../store/recovery-reminders.js';
 import { EVENT_LABELS } from './boards/views.js';
 import { DEFAULT_MODEL_PARAMS, meanDuration, phonationPercentage } from '../vocal-load.js';
 import { createLoadChart, zoneFor } from './load-chart.js';
 import { createScoreChart } from './score-chart.js';
 import { createScoreSeries } from './score-series.js';
+import { createSecondSeries } from '../store/second-series.js';
 import { createSyncPanel } from './sync-panel.js';
 import { createVoiceAssessmentPanel } from './voice-assessment-panel.js';
+import { createTeacherApp, initialView } from './teacher/teacher-app.js';
 
 const CATEGORY_LABELS = {
   fonacion_atribuida: 'Fonación atribuida',
@@ -52,6 +57,7 @@ const MODE_LABELS = {
   [MODES.CALIBRATING]: 'Calibrando ambiente',
   [MODES.ACOUSTIC_CALIBRATING]: 'Calibrando nivel',
   [MODES.ENROLLING]: 'Enrolando hablante',
+  [MODES.REFERENCING]: 'Tomando referencia vocal',
   [MODES.RECORDING]: 'Grabando muestra (solo en memoria)',
   [MODES.MEASURING]: 'Midiendo',
   [MODES.PAUSED]: 'En pausa',
@@ -91,7 +97,7 @@ const el = Object.fromEntries(
   [
     'device', 'connect', 'device-info', 'cal-ref', 'cal-pre', 'cal-post', 'cal-status', 'cal-drift', 'step-acoustic',
     'dd-profile', 'dd-method', 'dd-value', 'dd-unit', 'dd-status', 'step-distance', 'kpi-distance', 'kpi-distance-note',
-    'calibrate', 'enroll', 'threshold', 'threshold-value',
+    'calibrate', 'enroll', 'reference', 'reference-status', 'step-reference', 'threshold', 'threshold-value',
     'noise-floor', 'enrolment', 'step-calibrate', 'step-enroll', 'progress', 'progress-label',
     'progress-value', 'progress-bar', 'message', 'start', 'pause', 'resume', 'finish', 'export',
     'mode-dot', 'mode-label', 'session-clock', 'status-card', 'kpi-category', 'kpi-reason', 'kpi-f0',
@@ -114,6 +120,7 @@ let progress = null;
 let busy = false;
 let sessionStartedAt = null;
 let microphoneLabel = '';
+let teacher = null; // teacher view (src/ui/teacher), created once every action exists
 
 // ---------- formatting ----------
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -140,6 +147,7 @@ function setAttr(node, name, value) {
 function say(text, tone = 'info') {
   el.message.textContent = text;
   el.message.dataset.tone = tone;
+  teacher?.toast(text, tone);
 }
 
 // ---------- device & setup ----------
@@ -158,6 +166,8 @@ const SCORE_DOSE_NAMES = {
   exponential: 'D<sub>E</sub>', saturating: 'D<sub>S</sub>', distance: 'D<sub>d</sub>',
 };
 const scoreSeries = createScoreSeries();
+/** Per-second phonated time and F0·I of the session, kept in the workday (perSecond). */
+const secondSeries = createSecondSeries();
 const score = createScoreChart($('tab-score'), { series: scoreSeries });
 const scoreDose = $('score-dose');
 
@@ -173,6 +183,7 @@ scoreDose.addEventListener('change', applyScoreDose);
 
 function resetScore(load, startDate) {
   scoreSeries.reset();
+  secondSeries.reset();
   const distanceOption = scoreDose.querySelector('option[value="distance"]');
   distanceOption.disabled = load.distanceDose === null;
   if (distanceOption.disabled && scoreDose.value === 'distance') scoreDose.value = 'none';
@@ -189,6 +200,7 @@ function recordScoreFrame({ analysis: a, load, timestamp }) {
     t: timestamp, dt: a.dt, phi: a.phi, f0: a.phi ? a.f0 : null, level: a.phi ? level : null,
     h: load.h, doses: load.doses, distanceDose: load.distanceDose,
   });
+  secondSeries.push({ dt: a.dt, phi: load.lastFrame?.phi ?? a.phi, f0: a.f0, intensity: load.lastFrame?.intensity ?? 0 });
   if (scoreSeries.length === 1) $('score-empty').hidden = true;
   score.invalidate();
 }
@@ -208,20 +220,51 @@ function downloadText(text, fileName, type) {
 const localWorkdays = createIndexedDbRepository();
 const outbox = createIndexedDbOutbox();
 const syncPanel = createSyncPanel({ $, outbox, repository: localWorkdays, onPurged: () => boards.refresh() });
-const workdayRepository = createOptInRepository({
+// A rebuilt record of a saved workday keeps the recovery points recorded after it (hito 10).
+const workdayRepository = preserveRecovery(createOptInRepository({
   repository: localWorkdays,
   syncingRepository: createSyncingRepository(localWorkdays, outbox, {
     onEnqueued: () => syncPanel.flush(),
     onError: (error) => say(`La jornada quedó guardada en este equipo, pero no se pudo encolar su envío: ${error.message}`, 'error'),
   }),
   isEnabled: syncPanel.isEnabled,
+}));
+// Recovery reminders (hito 10): a notification while the app is open, the in-app message
+// otherwise; the calendar file covers the app being closed.
+const recoveryNotifier = createRecoveryNotifier({
+  list: () => workdayRepository.list(),
+  notify: (r) => {
+    const until = r.closesAt.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    const body = `Registrá tu fatiga (${r.label}) en «Mi jornada». Se puede hasta las ${until}.`;
+    say(`Recuperación: ${body}`);
+    try {
+      if (globalThis.Notification?.permission === 'granted') new Notification('VocalDose · fatiga vocal', { body, tag: `${r.workdayId}:${r.slot}` });
+    } catch {
+      // Some mobile browsers only notify through a service worker; the in-app message stays.
+    }
+  },
 });
+const refreshReminders = () => recoveryNotifier.refresh().catch(() => {});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') refreshReminders();
+});
+refreshReminders();
+
 const boards = createBoards({
   roots: { teacher: $('tab-teacher'), director: $('tab-director'), analytics: $('tab-analytics') },
   bar: $('board-bar'),
   repository: workdayRepository,
   download: downloadText,
   say,
+  reminders: {
+    async enable() {
+      if (!globalThis.Notification) return 'unsupported';
+      const permission = await Notification.requestPermission();
+      refreshReminders();
+      return permission;
+    },
+    refresh: refreshReminders,
+  },
 });
 
 const tabs = [
@@ -231,7 +274,9 @@ const tabs = [
   { button: $('tab-btn-director'), panel: $('tab-director'), board: 'director' },
   { button: $('tab-btn-analytics'), panel: $('tab-analytics'), board: 'analytics' },
 ];
+let currentTab = 0;
 function selectTab(index) {
+  currentTab = index;
   tabs.forEach(({ button, panel }, i) => {
     const selected = i === index;
     button.setAttribute('aria-selected', String(selected));
@@ -274,11 +319,15 @@ const assessment = createVoiceAssessmentPanel({
   downloadCsv,
   csvFileName,
 });
-$('jr-event-add').addEventListener('click', () => {
+/** Context event marked by the teacher at the current session time. */
+function markEvent(type) {
   const t = manager.session?.latest?.timestamp ?? 0;
-  workdayEvents.push({ t, type: $('jr-event-type').value, source: 'docente' });
+  const event = { t, type, source: 'docente' };
+  workdayEvents.push(event);
   renderWorkdayEvents();
-});
+  return event;
+}
+$('jr-event-add').addEventListener('click', () => markEvent($('jr-event-type').value));
 /**
  * Workday of the current session. A checkpoint (lenient) skips an invalid VAS instead of
  * failing; the codes are always required, since they make the record id.
@@ -296,9 +345,10 @@ function currentWorkday({ lenient = false } = {}) {
     events: [...workdayEvents, ...detectEvents(scoreSeries)].sort((a, b) => a.t - b.t),
     assessment: assessment.forWorkday(),
   };
-  return buildWorkday({ meta, load: manager.session.load, series: scoreSeries, startedAt: sessionStartedAt, algorithmVersion: ALGORITHM_VERSION, source: 'live' });
+  return buildWorkday({ meta, load: manager.session.load, series: scoreSeries, seconds: secondSeries, startedAt: sessionStartedAt, algorithmVersion: ALGORITHM_VERSION, source: 'live' });
 }
-$('jr-save').addEventListener('click', async () => {
+/** Saves the workday of the last session; resolves to it, or null when it could not be saved. */
+async function saveWorkday() {
   try {
     const workday = currentWorkday();
     if (autosave) {
@@ -308,12 +358,30 @@ $('jr-save').addEventListener('click', async () => {
       await boards.save(workday);
     }
     workdaySaved = true;
+    refreshReminders();
     setText($('jr-status'), `Guardada ${workday.id}`);
-    say(`Jornada guardada (${workday.events.length} eventos). Ya aparece en Mi jornada, Dirección y Analítica.`);
+    say(`Jornada guardada (${workday.events.length} eventos). Ya aparece en Mi jornada, Dirección y Analítica. En «Mi jornada» registrá tu fatiga a los 30 min, 1 h, 2 h y 4 h de terminar, y a la mañana siguiente; ahí podés agregar esos horarios a tu calendario.`);
+    return workday;
   } catch (error) {
     say(`No se pudo guardar la jornada: ${error.message.includes('code of') ? 'completá docente, escuela y aula con códigos (letras, números, «.», «-» o «_», sin espacios).' : error.message}`, 'error');
+    return null;
   }
-});
+}
+/**
+ * The technical view warns when the acoustic voice takes or the Borg effort of a timepoint are
+ * missing, but lets the user go on (testing and calibration sessions); the teacher view requires them.
+ */
+function confirmMissingSamples(timepoint) {
+  const missing = [
+    ...(assessment.samplesDone(timepoint) ? [] : ['las pruebas de voz (vocal /a/ y lectura del texto)']),
+    ...($(`va-${timepoint.toLowerCase()}-borg`).value !== '' ? [] : ['el esfuerzo (Borg CR10)']),
+  ];
+  if (!missing.length) return true;
+  const when = timepoint === 'PRE' ? 'antes de empezar' : 'al terminar';
+  // eslint-disable-next-line no-alert
+  return window.confirm(`Faltan ${missing.join(' y ')} ${when}. ¿Seguir de todos modos?`);
+}
+$('jr-save').addEventListener('click', () => (confirmMissingSamples('POST') ? saveWorkday() : null));
 tabs.forEach(({ button }, i) => {
   button.addEventListener('click', () => selectTab(i));
   button.addEventListener('keydown', (event) => {
@@ -333,11 +401,13 @@ function onSessionEvent(event) {
   }
 }
 
-el.connect.addEventListener('click', async () => {
+/** Opens the chosen microphone; resolves true when connected. */
+async function connectMicrophone() {
   busy = true;
   try {
     const info = await manager.open({ deviceId: el.device.value || undefined });
     info.session.subscribe(onSessionEvent);
+    info.session.setCaptureSettings(info.trackSettings); // recorded with each session (AGC, spec §10.1)
     info.session.setSimilarityThreshold(Number(el.threshold.value));
     const s = info.trackSettings;
     microphoneLabel = info.deviceLabel || '';
@@ -351,12 +421,15 @@ el.connect.addEventListener('click', async () => {
     setText(el['d-format'], `${info.sampleRate} Hz · tramas de ${info.frameSize} muestras (${fixed((1000 * info.frameSize) / info.sampleRate, 1)} ms)`);
     await populateDevices();
     say('Micrófono conectado. Calibrá el ambiente en silencio.');
+    return true;
   } catch (error) {
     say(`No se pudo conectar el micrófono: ${error.message}`, 'error');
+    return false;
   } finally {
     busy = false;
   }
-});
+}
+el.connect.addEventListener('click', connectMicrophone);
 
 el.threshold.addEventListener('input', () => {
   setText(el['threshold-value'], Number(el.threshold.value).toFixed(2));
@@ -368,8 +441,10 @@ async function runTask(label, fn, done) {
     say(`${label} en curso…`);
     const result = await fn();
     say(done(result));
+    return true;
   } catch (error) {
     say(`${label}: ${error.message}`, 'error');
+    return false;
   } finally {
     progress = null;
   }
@@ -399,10 +474,10 @@ async function runCalibration(phase) {
 el['cal-pre'].addEventListener('click', () => runCalibration('pre'));
 el['cal-post'].addEventListener('click', () => runCalibration('post'));
 
-el.calibrate.addEventListener('click', () =>
-  runTask('Calibración', () => manager.session.calibrate(), (rms) => `Ambiente calibrado: ${fixed(toDb(rms), 1)} dBFS. Ahora enrolá la voz.`),
-);
-el.enroll.addEventListener('click', () =>
+const calibrateAmbient = () =>
+  runTask('Calibración', () => manager.session.calibrate(), (rms) => `Ambiente calibrado: ${fixed(toDb(rms), 1)} dBFS. Ahora enrolá la voz.`);
+el.calibrate.addEventListener('click', calibrateAmbient);
+const enrollSpeaker = () =>
   runTask('Enrolamiento', () => manager.session.enroll(), () => {
     const quality = manager.session.profileQuality;
     if (quality !== null && quality < LOW_PROFILE_QUALITY) {
@@ -410,11 +485,31 @@ el.enroll.addEventListener('click', () =>
     }
     const range = manager.session.profile?.f0Range;
     const f0 = range ? ` Tu tono: ${Math.round(range.low)}-${Math.round(range.high)} Hz.` : '';
-    const ref = manager.session.voiceReference;
-    const level = ref ? ` Tu voz normal: ${fixed(ref.levelDbfs, 1)} dBFS (referencia de intensidad).` : '';
-    return `Perfil creado${quality === null ? '' : `: reconoce el ${percent(quality)} de tu voz de prueba`}.${f0}${level} Ya podés iniciar.`;
-  }),
-);
+    const next = manager.session.acousticCalibration ? 'Ya podés iniciar.' : 'Ahora tomá la referencia vocal.';
+    return `Perfil creado${quality === null ? '' : `: reconoce el ${percent(quality)} de tu voz de prueba`}.${f0} ${next}`;
+  });
+el.enroll.addEventListener('click', enrollSpeaker);
+
+/** P90 - P10 of the reference reading: how steady the habitual voice was (spec §10.1). */
+const referenceSpread = (ref) => ref.p90Dbfs - ref.p10Dbfs;
+
+/** Standardised habitual-voice reading (spec §10.1); resolves true when the reference was taken. */
+async function takeReference() {
+  try {
+    say('Referencia vocal en curso: leé el texto con tu voz habitual…');
+    const ref = await manager.session.captureVoiceReference({ textId: STANDARD_TEXT_ID });
+    say(`Referencia tomada: ${fixed(ref.levelDbfs, 1)} dBFS (P10–P90: ${fixed(referenceSpread(ref), 1)} dB, ${fixed(ref.validS, 1)} s de tu voz). Ya podés iniciar.`);
+    return true;
+  } catch (error) {
+    say(error.code === 'reference_too_short'
+      ? 'Referencia vocal: se reconoció muy poco de tu voz. Repetila leyendo el texto de corrido durante los 30 s.'
+      : `Referencia vocal: ${error.message}`, 'error');
+    return false;
+  } finally {
+    progress = null;
+  }
+}
+el.reference.addEventListener('click', takeReference);
 
 /** Why D_d is (not) shown, so an empty value is never silent. */
 function distanceDoseNote(load) {
@@ -504,13 +599,15 @@ window.addEventListener('beforeunload', (event) => {
 });
 
 // ---------- session controls ----------
-el.start.addEventListener('click', async () => {
+/** Starts a measuring session; resolves true when it started. */
+async function startSession() {
   if (hasUnsavedWork({ session: manager.session, workdaySaved })) {
-    if (!window.confirm('La sesión anterior no se guardó como jornada. ¿Descartarla e iniciar una nueva?')) return;
+    if (!window.confirm('La sesión anterior no se guardó como jornada. ¿Descartarla e iniciar una nueva?')) return false;
     try {
       await autosave?.discard();
     } catch (error) {
-      return say(`No se pudo descartar el autoguardado anterior: ${error.message}`, 'error');
+      say(`No se pudo descartar el autoguardado anterior: ${error.message}`, 'error');
+      return false;
     }
   }
   try {
@@ -528,32 +625,40 @@ el.start.addEventListener('click', async () => {
     setText($('jr-status'), 'Midiendo…');
     setText(el['dose-units'], DOSE_UNITS_TEXT[load.units](load));
     say('Sesión en curso.');
+    return true;
   } catch (error) {
     say(START_ERRORS[error.code] ?? error.message, 'error');
+    return false;
   }
-});
-el.pause.addEventListener('click', () => {
+}
+el.start.addEventListener('click', () => (confirmMissingSamples('PRE') ? startSession() : null));
+function pauseSession() {
   manager.session.pause();
   manager.keepAwake(false);
   autosave?.checkpoint();
   say('Sesión en pausa. Podés continuar o exportar lo registrado hasta ahora.');
-});
-el.resume.addEventListener('click', async () => {
-  // A click is a user gesture, so a suspended context can be resumed here.
+}
+el.pause.addEventListener('click', pauseSession);
+/** Must run from a user gesture, so a suspended audio context can be resumed. */
+async function resumeSession() {
   if (manager.interruption && !(await manager.resumeContext())) {
-    return say(`No se puede continuar: ${INTERRUPTION_LABELS[manager.interruption.reason]}.`, 'error');
+    say(`No se puede continuar: ${INTERRUPTION_LABELS[manager.interruption.reason]}.`, 'error');
+    return false;
   }
   manager.session.resume();
   manager.keepAwake(true);
   say('Sesión en curso.');
-});
-el.finish.addEventListener('click', () => {
+  return true;
+}
+el.resume.addEventListener('click', resumeSession);
+function finishSession() {
   manager.session.stop();
   manager.keepAwake(false);
   autosave?.stop();
   autosave?.checkpoint(); // kept until the manual save replaces it or the session is discarded
   say(`Sesión finalizada: ${manager.session.recordCount} tramas registradas. Exportá el CSV para conservarlas.`);
-});
+}
+el.finish.addEventListener('click', finishSession);
 // Optional .csv.gz: the plain .csv stays the default; without CompressionStream the option is off.
 const gzipOption = $('export-gzip');
 if (!supportsGzip()) {
@@ -593,7 +698,8 @@ function renderControls(session) {
   el['dd-value'].disabled = !idle || !ddOn;
   el.enroll.disabled = !idle || session.noiseFloorRms === null;
   el.threshold.disabled = mode === MODES.MEASURING || mode === MODES.PAUSED;
-  el.start.disabled = !idle || session.profile === null;
+  el.reference.disabled = !idle || session.profile === null;
+  el.start.disabled = !idle || session.profile === null || (session.acousticCalibration === null && session.voiceReference === null);
   el.pause.disabled = mode !== MODES.MEASURING;
   el.resume.disabled = mode !== MODES.PAUSED;
   el.finish.disabled = mode !== MODES.MEASURING && mode !== MODES.PAUSED;
@@ -627,19 +733,24 @@ function renderControls(session) {
     const quality = session.profileQuality;
     setText(el.enrolment, !session.profile ? 'Sin perfil' : quality === null ? `${session.profile.prototypes.length} prototipos` : `Reconoce ${percent(quality)} de tu voz`);
     setAttr(el['step-enroll'], 'data-done', String(session.profile !== null));
+    const ref = session.voiceReference;
+    setText(el['reference-status'], ref ? `${fixed(ref.levelDbfs, 1)} dBFS · P10–P90 ${fixed(referenceSpread(ref), 1)} dB` : session.acousticCalibration ? 'No hace falta (calibrado)' : 'Sin tomar');
+    setAttr(el['step-reference'], 'data-done', String(ref !== null));
   }
 
   if (progress?.mode === MODES.RECORDING && session?.mode !== MODES.RECORDING) progress = null; // take finished or cancelled
   el.progress.hidden = !progress;
   if (progress) {
-    const enrolling = progress.validTime !== undefined;
+    const enrolling = progress.mode === MODES.ENROLLING;
     const done = enrolling ? progress.validTime : progress.elapsed;
     // Guided enrolment: the profile must cover the raised classroom voice too (spec §6.1).
     const enrolPhase = done < progress.target / 2 ? 'Voz normal' : 'Ahora en voz alta';
     const recordingPhase = done < progress.leadInSeconds ? 'Silencio' : 'Grabando (solo en memoria)';
     const label = enrolling
       ? enrolPhase
-      : progress.mode === MODES.RECORDING
+      : progress.mode === MODES.REFERENCING
+        ? 'Leé el texto con tu voz habitual'
+        : progress.mode === MODES.RECORDING
         ? recordingPhase
         : progress.mode === MODES.ACOUSTIC_CALIBRATING ? 'Tono de referencia' : 'Ambiente';
     setText(el['progress-label'], label);
@@ -653,7 +764,7 @@ function renderLive(session) {
   const enrolling = session?.mode === MODES.ENROLLING;
   // Outside enrolment, only frames of a measuring session are shown: the last
   // enrolment frame (classified without a profile) must not linger as "voz no atribuida".
-  const a = enrolling || load ? session.latest?.analysis : undefined;
+  const a = enrolling || load || session?.mode === MODES.REFERENCING ? session.latest?.analysis : undefined;
   const validForProfile = enrolling && a?.V === 1 && a?.Q === 1;
   const category = validForProfile ? 'fonacion_atribuida' : a?.category ?? 'none';
   setAttr(el['status-card'], 'data-category', category);
@@ -709,8 +820,36 @@ function render() {
   renderControls(session);
   renderLive(session);
   renderDiagnostics(session);
+  teacher?.render();
   requestAnimationFrame(render);
 }
+
+// ---------- teacher view (odd/tasks/vista-docente-movil.md) ----------
+teacher = createTeacherApp({
+  root: $('teacher-app'),
+  $,
+  actions: {
+    connectMicrophone, calibrateAmbient, enrollSpeaker, takeReference, startSession,
+    pauseSession, resumeSession, finishSession, markEvent, saveWorkday,
+  },
+  getSession: () => manager.session,
+  getProgress: () => progress,
+  isSaved: () => workdaySaved,
+  samplesDone: (timepoint) => assessment.samplesDone(timepoint),
+  getInterruption: () => manager.interruption,
+  scoreSeries,
+  adopt: { score: $('tab-score'), 'teacher-board': $('tab-teacher') },
+  boards,
+  repository: workdayRepository,
+  outbox,
+  isSyncEnabled: syncPanel.isEnabled,
+  onView: (view) => { if (view === 'technical') selectTab(currentTab); },
+  onScoreShown: () => score.refresh(),
+  getEvents: () => workdayEvents,
+  getStartedAt: () => sessionStartedAt,
+});
+$('to-teacher').addEventListener('click', () => teacher.setView('teacher'));
+teacher.setView(initialView());
 
 populateDevices().catch((error) => say(error.message, 'error'));
 chart.start();

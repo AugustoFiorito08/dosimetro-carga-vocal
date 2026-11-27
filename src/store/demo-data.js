@@ -25,6 +25,9 @@ const pad = (n) => String(n).padStart(2, '0');
 export function generateDemoWorkdays({ seed = 2026, schools = 3, classroomsPerSchool = 4, weeks = 4, firstMonday = new Date(2026, 9, 19) } = {}) {
   const rand = mulberry32(seed);
   const normal = () => Math.sqrt(-2 * Math.log(1 - rand())) * Math.cos(2 * Math.PI * rand());
+  // Recovery uses its own stream, so adding it left every earlier simulated value unchanged.
+  const recoveryRand = mulberry32(seed ^ 0x5eed);
+  const recoveryNormal = () => Math.sqrt(-2 * Math.log(1 - recoveryRand())) * Math.cos(2 * Math.PI * recoveryRand());
   const teachers = [];
   let code = 100;
   for (let s = 1; s <= schools; s++) {
@@ -113,12 +116,33 @@ export function generateDemoWorkdays({ seed = 2026, schools = 3, classroomsPerSc
           units: 'calibrated',
           timeline,
           events,
-          fatigue: { pre: rand() < 0.06 ? null : pre, post: rand() < 0.08 ? null : post },
+          fatigue: withRecovery({ pre: rand() < 0.06 ? null : pre, post: rand() < 0.08 ? null : post }, { startedAt, durationS, none }),
           algorithmVersion: '0.4.0',
           source: 'demo',
         });
       }
     }
   }
+  /**
+   * Fatigue after the workday: F(t) = F_pre + ΔF·exp(−t/τ) plus noise, with τ growing with D_0
+   * (the same H0 as the fatigue change); about one time in eight is left unrecorded.
+   */
+  function withRecovery(fatigue, { startedAt, durationS, none }) {
+    if (fatigue.pre === null || fatigue.post === null) return fatigue;
+    const end = startedAt.getTime() + durationS * 1000;
+    const endDate = new Date(end);
+    const morning = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate() + 1, 6, 30).getTime();
+    const tau = 80 * Math.sqrt(none / 35000) * Math.exp(0.3 * recoveryNormal());
+    const times = [['R30', 30], ['R60', 60], ['R120', 120], ['R240', 240], ['NEXT', (morning - end) / 60000]];
+    const recovery = [];
+    for (const [slot, target] of times) {
+      const minutes = Math.round((target - 3 + 18 * recoveryRand()) * 10) / 10;
+      if (recoveryRand() < 0.12) continue;
+      const value = clamp(Math.round(fatigue.pre + (fatigue.post - fatigue.pre) * Math.exp(-minutes / tau) + 3 * recoveryNormal()), 0, 100);
+      recovery.push({ slot, at: new Date(end + minutes * 60000).toISOString(), minutes, value });
+    }
+    return { ...fatigue, recovery };
+  }
+
   return out.sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
 }

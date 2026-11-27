@@ -331,9 +331,12 @@ En el protocolo de estudio cada participante usa su propio celular, con una diad
 I_k = (P_k / P_ref)^2 = 10^((L_k − L_ref) / 10)
 ```
 
-- `L_ref` es la mediana del nivel de las tramas sonoras válidas de la **primera mitad del enrolamiento**, la de voz normal, según la guía. Se mide cada día, con la diadema ya colocada, porque el enrolamiento es obligatorio antes de iniciar. Una nueva calibración del ambiente la descarta junto con el perfil.
+- `L_ref` sale de una **referencia vocal estandarizada** (desde 0.9.0), un paso propio después del enrolamiento: 30 s de lectura del texto estándar (`viento-norte-sol-v1`, §23.1) en **voz habitual**, cómoda, no de clase; si la lectura termina antes, se vuelve a empezar. `A_ref` es la **mediana** de la RMS de las tramas aceptadas como fonación propia (`V = W = Q = 1`), y `L_ref = 20·log10(A_ref)`. Hacen falta al menos 8 s de fonación aceptada; si no, la toma se rechaza y hay que repetirla.
+- Junto con la mediana se guardan P10 y P90 del nivel de esas tramas, la duración de la toma y los segundos de fonación aceptada. `P90 − P10` indica qué tan pareja fue la voz de referencia: una dispersión grande sugiere que la mediana no representa bien la voz habitual. No hay un umbral de rechazo por dispersión: se registra para el análisis.
+- Sin calibración acústica, la referencia es obligatoria para iniciar. Se toma cada día, con la diadema ya colocada (basal diario). Un nuevo enrolamiento o una nueva calibración del ambiente la descartan.
+- Hasta 0.8.0, `L_ref` era la mediana de la primera mitad del enrolamiento (unos 7,5 s de habla libre). Las dosis normalizadas de 0.8.0 y 0.9.0 no son comparables: la versión del algoritmo las distingue.
 - La sensibilidad del celular afecta por igual a `P_k` y a `P_ref`, así que se cancela. `I = 1` es la voz normal de la persona, `I ≈ 4` equivale a +6 dB sobre ella y `I = 10` a +10 dB.
-- Las unidades se rotulan `normalized`. `L_ref` se exporta como `ownVoiceRefDbfs` en los parámetros del CSV y como `ownVoiceRefDbfs` en la jornada; el CSV de los tableros lo incluye en `own_voice_ref_dbfs`.
+- Las unidades se rotulan `normalized`. `L_ref` se exporta como `ownVoiceRefDbfs` en los parámetros del CSV y como `ownVoiceRefDbfs` en la jornada; el CSV de los tableros lo incluye en `own_voice_ref_dbfs`. La jornada lleva además `ownVoiceRef` (`method = connected_speech`, `textId`, `p10Dbfs`, `p50Dbfs`, `p90Dbfs`, `durationS`, `validS`), y los parámetros del CSV, `ownVoiceRefMethod`, `ownVoiceRefTextId`, `ownVoiceRefP10Dbfs`, `ownVoiceRefP90Dbfs` y `ownVoiceRefValidS`.
 - `H` depende solo de la fonación (§9), no de `I`, así que no cambia; las constantes de `f(H)` tampoco.
 - Con esta normalización, `D_0` se lee como **ciclos equivalentes a voz normal**: hablar todo el día a voz normal da `D_0 = D_c`. Los modelos con memoria ponderan además por la carga reciente.
 - Con calibración acústica se mantiene la presión en Pa (§10) y no se normaliza.
@@ -343,7 +346,7 @@ Interpretación y límites:
 - La dosis normalizada mide el **esfuerzo relativo a la propia voz**, no la exposición acústica absoluta. Una persona cuya voz normal ya es fuerte aparece con `I ≈ 1` hablando así. La hipótesis de trabajo es que el esfuerzo relativo explica la fatiga. Se pone a prueba comparando qué exposición predice mejor ΔF, ΔE y ΔCPPS: `D_c`, `D_0` o los modelos con memoria.
 - No permite un TLV de intensidad absoluto. Los límites transferibles en unidades físicas se derivan de `D_t` y `D_c`, que no dependen de la calibración.
 - Un error en `L_ref` multiplica toda la jornada por `10^(error/10)`: 1 dB equivale a ×1,26 y 3 dB a ×2. Por eso hay que mantener estable la colocación de la diadema y enrolar con la voz habitual, no forzada. Conviene analizar `log(D_k)` y vigilar la estabilidad de `L_ref` de cada participante entre días.
-- La normalización supone que el celular no aplica control automático de ganancia. Si lo aplica, el nivel deja de reflejar el esfuerzo (§4.2).
+- La normalización supone que el celular no aplica control automático de ganancia. Si lo aplica, el nivel deja de reflejar el esfuerzo (§4.2). La captura pide desactivar el control automático de ganancia, la supresión de ruido y la cancelación de eco. Desde 0.9.0, lo que el navegador informa para la pista (`getSettings()`) se guarda con cada sesión: en la jornada, `capture` (`autoGainControl`, `noiseSuppression`, `echoCancellation`: `true`, `false` o `null` si el navegador no lo informa), y en los parámetros del CSV, `agc`, `noiseSuppression` y `echoCancellation` (`on`, `off` o `unknown`). El navegador no expone la ganancia del micrófono, así que no se registra. Un `false` informado no garantiza que el fabricante del celular no procese la señal por debajo del navegador.
 - La dosis de distancia `D_d` necesita SPL absoluto (sonómetro) y no está disponible en este protocolo. Su motor se conserva, pero la interfaz la oculta.
 - Los tableros nunca mezclan unidades. Si hay jornadas guardadas con unidades distintas (`normalized`, `calibrated` o `relative`, por ejemplo jornadas de prueba anteriores a la 0.7.0), la barra de datos muestra un selector de unidades. Por defecto se muestran las de la jornada más reciente, y el contador indica cuántas jornadas quedaron fuera. Los registros sin unidades se toman como `relative`. El CSV de los tableros sigue exportando todas las jornadas, con su columna `units`.
 
@@ -554,11 +557,14 @@ El paso **Jornada (tableros)** guarda un resumen de cada sesión (`vd-des-workda
 - dosis acumuladas al final de cada minuto (línea de tiempo);
 - eventos de contexto marcados por el docente durante la medición (llamado de atención, explicación, actividad grupal, recreo, otro) y eventos automáticos;
 - fatiga vocal percibida antes y después de la jornada, en una escala visual analógica de 0 a 100 (desenlace primario del protocolo), optativas;
+- fatiga registrada durante la recuperación, en horarios fijos después de la jornada (`fatigue.recovery`, §24), optativa;
 - versión del algoritmo y origen (`live`, `import` o `demo`).
 
 **Autoguardado.** Mientras la sesión mide o está en pausa, la jornada se guarda sola en IndexedDB cada 2 minutos y además al pausar, al finalizar, ante una interrupción de la captura y al ocultar o cerrar la página (en este último caso, sin garantía de que la escritura termine). Es el mismo registro `vd-des-workday/1` con el mismo identificador, reemplazado en su lugar, más un campo optativo `checkpoint: { status, savedAt }`: `in_progress` mientras la sesión sigue y `recovered` cuando se encuentra al abrir la aplicación tras un cierre inesperado (se conserva, aparece en los tableros y se avisa una sola vez). El guardado manual escribe el registro final sin ese campo; los registros sin `checkpoint`, incluidos todos los anteriores, son finales. Las escrituras se hacen de a una, en orden, y el guardado manual siempre es la última. Si el docente cambia el código durante la sesión, se borra el autoguardado con el código anterior. Iniciar una sesión nueva sin haber guardado la anterior pide confirmación y descarta su autoguardado. El autoguardado necesita los códigos de docente, escuela y aula; sin ellos se avisa y no se guarda. Nunca guarda audio.
 
 Cada jornada puede llevar además dos campos optativos para el envío a una base analítica (§14.1): `sessionUuid`, un UUID aleatorio de la sesión, y `deviceId`, un identificador aleatorio de la instalación.
+
+Desde 0.9.0, las jornadas medidas llevan también `ownVoiceRef` (estadísticos de la referencia vocal, solo en sesiones `normalized`) y `capture` (procesamiento del navegador sobre el micrófono), descritos en §10.1. Los registros anteriores no los tienen y siguen siendo válidos.
 
 Las jornadas se exportan e importan como JSON (`vd-des-workdays/1`) para reunir las de varios equipos; al importar se omiten los identificadores ya presentes y se informan los registros inválidos.
 
@@ -566,7 +572,7 @@ Las jornadas se exportan e importan como JSON (`vd-des-workdays/1`) para reunir 
 
 ### 12.3 Mi jornada
 
-Vista del docente para una jornada elegida: fonación, tiempo observado, porcentaje de fonación, dosis de la jornada frente a su propia mediana, EVA pre y post, dosis acumulada y tasa por minuto con los eventos marcados, y la lista de eventos.
+Vista del docente para una jornada elegida: fonación, tiempo observado, porcentaje de fonación, dosis de la jornada frente a su propia mediana, EVA pre y post, dosis acumulada y tasa por minuto con los eventos marcados, la recuperación después de la jornada (registro de la EVA en cada horario fijo, R(t), T₅₀, T₉₀ y AUC_F; §24) y la lista de eventos.
 
 ### 12.4 Dirección
 
@@ -574,20 +580,61 @@ Vista preventiva por escuela y semana. Los docentes aparecen solo por código, y
 
 ### 12.5 Analítica
 
-Vista de investigación sobre todas las jornadas disponibles:
+Vista de investigación sobre todas las jornadas disponibles. El **desenlace** se elige entre tres: ΔF (cambio de EVA post − pre, por defecto), AUC_F de 0 a 4 h y T₉₀ (§24.4). La distribución, la tabla de jornadas, la dosis-respuesta, las ROC, el corte de Youden y los niveles de acción usan el desenlace elegido:
 
 - KPI (participantes, jornadas recibidas y válidas, escuelas, última recepción, calidad global) y participación mensual;
 - distribución de la dosis elegida y del cambio de EVA (post − pre), con n, media, mediana, DE, P25, P75 y P95 (cuantiles tipo 7);
 - últimas jornadas recibidas;
 - dosis-respuesta: regresión lineal (OLS) del cambio de EVA sobre la dosis, con banda de confianza al 95 % de la media (t de Student exacta), R² y rho de Spearman;
-- curvas ROC de cada modelo para el caso **cambio de EVA ≥ umbral** (configurable, 20 puntos por defecto y provisional, porque el protocolo exige fijar la magnitud mínima relevante antes de analizar), con AUC de Mann-Whitney e intervalo de Hanley-McNeil al 95 %;
+- curvas ROC de cada modelo para el caso del desenlace elegido: **cambio de EVA ≥ umbral** (configurable, 20 puntos por defecto y provisional, porque el protocolo exige fijar la magnitud mínima relevante antes de analizar), con AUC de Mann-Whitney e intervalo de Hanley-McNeil al 95 %; **AUC_F ≥ umbral** (20 EVA·h por defecto) o **T₉₀ > umbral** (240 min por defecto), todos provisionales;
 - en el corte de Youden (empates a la mayor sensibilidad): sensibilidad, especificidad, VPP y VPN con intervalos de Wilson al 95 %;
 - niveles de acción provisionales: C1 = corte de Youden y C2 = menor corte con especificidad ≥ 0,90, con zonas baja, media y alta, siempre con ícono y texto;
+- recálculo desde la serie por segundo (ver abajo);
 - exportación de los resúmenes en CSV.
+
+**Recálculo desde la serie por segundo.** Las jornadas que tienen `perSecond` (§14.1) se recalculan en el navegador con un deslizador por parámetro, agrupados por familia y dentro de los rangos de búsqueda del documento de parámetros de f(H) (§2 y §16):
+
+| Familia | Parámetro | Rango | Inicial |
+|---|---|---|---|
+| Memoria | β | 0,005–0,100 s⁻¹ | 0,030 |
+| Lineal | α_L | 0,005–0,100 s⁻¹ | 0,050 |
+| Potencial | a | 0,10–3,00 | 1,00 |
+| Potencial | p | 0,50–3,00 | 2,00 |
+| Exponencial | α_E | 0,002–0,060 s⁻¹ | 0,025 |
+| Saturante | A | 0,25–6,00 | 3,00 |
+| Saturante | K_H | 5–120 s | 40 |
+
+H_ref queda fijo en 20 s y no se ajusta, porque a, p y H_ref se compensan entre sí (documento de parámetros, §7). Cada parámetro de forma mueve solo su modelo y β solo la memoria; ya no se usa el ancla del motor, que ataba las formas a β. Un botón vuelve a los valores iniciales. Segundo a segundo se aplica H_k = H_(k−1)·e^(−β) + phonation_k y cada modelo suma phonation_k · f0I_k · f(H_k), con las mismas funciones de memoria que el motor. Mover un deslizador recalcula al instante:
+
+- por modelo, sobre las jornadas con serie: rho de Spearman con el desenlace elegido, AUC con su IC 95 % y la diferencia de AUC con D₀, que es la referencia;
+- para una jornada elegida: la dosis recalculada de cada modelo, cuántas veces D₀ es, y sus ΔF, AUC_F y T₉₀.
+- curvas exploratorias: dosis-respuesta (OLS con banda al 95 %, R² y rho) del modelo elegido en «Modelo de la curva» (D_L por defecto) y ROC de los cinco modelos, con las dosis recalculadas y solo las jornadas con serie.
+
+Las curvas exploratorias están dentro del panel y separadas de las principales: la dosis-respuesta, las ROC, el corte de Youden y los niveles de acción de arriba siguen usando las dosis guardadas y no cambian al mover los parámetros. Así los umbrales provisionales no se eligen mirando el resultado. Ajustar mirando las curvas exploratorias da AUC optimistas: los valores elegidos se congelan y se validan en jornadas nuevas (documento de parámetros, §12–14).
+
+Las dosis guardadas en las jornadas no cambian: el recálculo vive solo en pantalla. Las jornadas sin serie (anteriores a ella, importadas sin ella o simuladas) se cuentan aparte, con un aviso de que no admiten recálculo; si ninguna la tiene, el panel lo dice en lugar de mostrar la tabla. A 1 Hz no se sabe cómo se repartió la voz dentro de cada segundo: frente al cálculo por trama, las dosis con memoria difieren alrededor de 0,1 % con β = 0,005, 1 % con 0,03 y 2–3 % con 0,1; D₀ coincide salvo el redondeo con que se guarda la serie. No hay tabla de juegos de parámetros ni versionado: esos valores todavía se exploran, no se congelan.
 
 Las AUC son aparentes (misma muestra); la validación agrupada por docente, los modelos mixtos y los splines quedan para el análisis definitivo. Todas las pantallas indican "Valores provisionales · sin umbrales sanitarios validados".
 
-**Datos simulados:** un conjunto reproducible (3 escuelas, aulas de al menos 3 docentes, 4 semanas hábiles, ausencias y EVA faltantes) permite ver los tableros sin datos reales. Siempre se muestra con el aviso "DATOS SIMULADOS" y nunca se mezcla con las jornadas guardadas. La fatiga simulada sigue la hipótesis nula del protocolo (la memoria no aporta), de modo que ningún modelo resulta favorecido por construcción: la demo no es evidencia.
+**Datos simulados:** un conjunto reproducible (3 escuelas, aulas de al menos 3 docentes, 4 semanas hábiles, ausencias y EVA faltantes) permite ver los tableros sin datos reales. Siempre se muestra con el aviso "DATOS SIMULADOS" y nunca se mezcla con las jornadas guardadas. La fatiga simulada sigue la hipótesis nula del protocolo (la memoria no aporta), de modo que ningún modelo resulta favorecido por construcción: la demo no es evidencia. La recuperación simulada sigue F(t) = F_pre + ΔF·e^(−t/τ) con ruido, con τ creciente con `D_0` y alrededor de un horario de cada ocho sin registrar; usa su propia secuencia aleatoria, así que no cambia ningún otro valor simulado.
+
+### 12.6 Vista docente (celular)
+
+La docente usa una vista propia, pensada para el celular, con el mismo motor de medición que la vista técnica. Se abre sola en pantallas de hasta 760 px de ancho; el botón «Vista técnica» / «Vista docente» cambia de una a otra y la elección queda guardada en el navegador. La vista técnica conserva la calibración acústica, la dosis de distancia, el umbral de similitud, la exportación del CSV y los tableros de Dirección y Analítica.
+
+**Recorrido guiado**, una pantalla por vez, con el avance marcado arriba: datos (códigos seudónimos, que se recuerdan), micrófono (diadema a 2–3 cm de la boca), silencio del ambiente (5 s), reconocimiento de la voz (15 s: primero voz normal y, desde la mitad, voz de clase; si la app reconoce menos del 60 % de la voz de prueba, se ofrece repetir o seguir), voz habitual (lectura del texto estándar, 30 s; no hace falta si la sesión está calibrada), y cómo está la voz antes de empezar, en el orden del protocolo de §23.1: primero las pruebas acústicas, obligatorias porque son el dato objetivo de la voz (/a/ sostenida y lectura del texto estándar, que se muestra en la misma pantalla); después el esfuerzo (Borg CR10, eligiendo una de las diez frases; obligatorio), el cansancio de la voz (EVA, obligatoria) y la sequedad y la molestia (EVA), cada una con su consigna y los textos de los extremos de la hoja de respuesta. La primera vez, antes de todo, se muestran los tres ejemplos de referencia del esfuerzo. Después viene el inicio.
+
+**Durante la jornada**: tiempo transcurrido; estado de la medición (micrófono, señal y voz reconocida en los últimos 10 s); tiempo y porcentaje hablado; pausa actual; F0 actual y su mediana del día; volumen en dB respecto de la voz habitual (dB SPL si la sesión está calibrada); carga acumulada (`D_0`, en vibraciones ponderadas por el volumen) y su comparación con la propia historia; «Marcar qué estoy haciendo» (explicando, llamando la atención, actividad grupal, recreo u otra), pausa y fin.
+
+**Comparación con la propia historia.** No hay umbrales validados, así que la carga no se muestra en zonas verde, amarilla o roja, ni como porcentaje de un límite, ni con alertas de «alta carga». Se compara la `D_0` acumulada con la que tuvieron las jornadas anteriores de la misma docente, con las mismas unidades, en el mismo minuto transcurrido (solo cuentan las jornadas que duraron al menos eso): por encima del P75 es «por encima de tu jornada habitual», entre la mediana y el P75 es «algo por encima de tu mediana» y el resto, «dentro de tu jornada habitual». Hacen falta 5 jornadas previas; antes se indica cuántas faltan. Al final se compara la jornada completa del mismo modo.
+
+**La actividad la marca la docente.** La app no la detecta: los eventos automáticos (§12.2) describen el patrón acústico, no la actividad.
+
+**Al terminar**: el mismo orden que al empezar, sin los ejemplos de referencia: las dos pruebas acústicas con el texto a la vista (obligatorias), el esfuerzo (Borg CR10, obligatorio), el cansancio de la voz (EVA, obligatoria), la sequedad y la molestia, y guardado. Una muestra rechazada por calidad no cuenta: hay que repetirla; una guardada con advertencia sí cuenta. En la vista técnica las pruebas acústicas y el esfuerzo no son obligatorios: si faltan, al iniciar o al guardar la jornada se avisa y se puede seguir. El resumen muestra duración, tiempo hablado, F0 mediana, cambio de fatiga, la comparación de la jornada, lo que marcó y el estado del envío, dicho como es: «guardada solo en este celular» si el envío no está activado; si lo está, «pendiente de envío» (se manda solo cuando hay conexión, por HTTPS, solo el resumen y sin audio), «enviada» o «la base del estudio no la aceptó».
+
+**Partitura** simplificada: cuándo habló, volumen de la voz y carga acumulada, con explicaciones en lenguaje llano, más la lista de lo que marcó. **Mi jornada** muestra la jornada elegida (carga acumulada, recuperación con avisos y calendario de §24, y eventos) y la lista de jornadas guardadas en el celular con su estado de envío.
+
+Las EVA y los códigos de la vista docente se escriben en los mismos campos que usa la vista técnica, así que ambas muestran siempre lo mismo.
 
 ## 13. Exportación de datos
 
@@ -650,8 +697,8 @@ El envío de resúmenes a una base de datos que alimente un tablero analítico e
 - identificación: `schema`, `id` y, si existen, `sessionUuid` y `deviceId`;
 - códigos seudónimos: `participantId`, `schoolId`, `classroom`;
 - jornada: `date`, `startedAt`, `durationS`, `phonationS`, `validRatio`;
-- carga: `doses`, `hMax`, percentiles de `f0` y `level`, `units`, `ownVoiceRefDbfs`, `timeline` (dosis por minuto);
-- contexto: `events` (incluidas las interrupciones de captura), `fatigue`, `assessment` (EVA y medidas PRE–POST, sin audio);
+- carga: `doses`, `hMax`, percentiles de `f0` y `level`, `units`, `ownVoiceRefDbfs`, `ownVoiceRef`, `capture`, `timeline` (dosis por minuto), `perSecond` (serie por segundo, ver abajo);
+- contexto: `events` (incluidas las interrupciones de captura), `fatigue` (con `recovery` si se registró), `assessment` (EVA y medidas PRE–POST, sin audio);
 - procedencia: `algorithmVersion`, `source` y, si corresponde, `checkpoint`.
 
 Todo campo fuera de la lista se descarta al armar el envío y se rechaza al recibirlo.
@@ -663,7 +710,14 @@ Todo campo fuera de la lista se descarta al armar el envío y se rechaza al reci
 - La plantilla del hablante (prototipos, distancias, rango de F0 del enrolamiento).
 - Nombres ni datos de contacto.
 
-Como resguardo, el contrato rechaza cualquier arreglo de más de 100 valores numéricos fuera de la línea de tiempo por minuto, que tiene como máximo 1440 valores.
+Como resguardo, el contrato rechaza cualquier arreglo de más de 100 valores numéricos fuera de la línea de tiempo por minuto, que tiene como máximo 1440 valores, y de la serie por segundo, que tiene como máximo 86 400.
+
+**Serie por segundo (`perSecond`).** Campo optativo; las jornadas anteriores no lo tienen y siguen siendo válidas. Por cada segundo de tiempo medido guarda dos números:
+
+- `phonation[k]`: segundos fonados en ese segundo (Φ·Δt), entre 0 y 1;
+- `f0I[k]`: F0·I medio durante esa fonación (0 si no hubo), con la misma I_k del motor.
+
+`phonation[k] × f0I[k]` es la dosis sin memoria D₀ de ese segundo, así que con la serie se pueden recalcular las dosis con otros parámetros sin volver a grabar. Los segundos cuentan tiempo medido: las pausas de la sesión no agregan segundos, igual que en el motor, donde H no evoluciona mientras la sesión está en pausa. A 1 Hz la serie no puede contener audio. Una jornada de 8 h ocupa unos 0,4 MB; el servidor acepta como máximo 86 400 segundos por serie, con los dos arreglos del mismo largo.
 
 **Qué jornadas se envían.** Solo las guardadas y las recuperadas tras un cierre inesperado; estas llegan marcadas con `checkpoint.status = recovered`. Una sesión en curso (`in_progress`) nunca se envía.
 
@@ -740,6 +794,8 @@ El acceso a micrófono requiere un contexto seguro. `localhost` es admitido por 
 
 ## 16. Secuencia de uso
 
+En el celular, la vista docente (§12.6) guía estos pasos uno por uno.
+
 1. Conectar el micrófono externo.
 2. Abrir la aplicación.
 3. Autorizar el acceso al micrófono.
@@ -748,12 +804,14 @@ El acceso a micrófono requiere un contexto seguro. `localhost` es admitido por 
 6. Calibrar la cadena con el tono de referencia si se utilizarán Pa o dB SPL (§5.1).
 7. Mantener fija la posición del micrófono.
 8. Enrolar la voz durante 10 a 20 segundos.
-9. Revisar el score y el umbral de similitud.
-10. Iniciar la medición.
-11. Controlar SNR, atribución y calidad.
-12. Finalizar la sesión.
-13. Si la sesión fue calibrada, verificar la calibración con el mismo tono de referencia, sin cambiar la ganancia ni la posición.
-14. Exportar el CSV.
+9. Sin calibración acústica: tomar la referencia vocal, 30 s de lectura del texto estándar en voz habitual (§10.1).
+10. Revisar el score y el umbral de similitud.
+11. Iniciar la medición.
+12. Controlar SNR, atribución y calidad.
+13. Finalizar la sesión.
+14. Si la sesión fue calibrada, verificar la calibración con el mismo tono de referencia, sin cambiar la ganancia ni la posición.
+15. Exportar el CSV.
+16. Guardar la jornada y registrar la fatiga en «Mi jornada» a los 30 min, 1 h, 2 h y 4 h de terminar, y a la mañana siguiente (§24).
 
 ## 17. Verificación de la versión 0.3
 
@@ -839,6 +897,7 @@ La salida correcta es un índice experimental de carga vocal calculada. No debe 
 | 0.6.0 | 2026-11-20 | Evaluación acústica PRE–POST (§23): /a/ sostenida y texto estándar analizados en memoria y borrados; F0, CPP/CPPS, HNR, LTAS, cepstro medio, jitter y shimmer exploratorios; EVA de esfuerzo, molestia y sequedad; registro `VOICE_ACOUSTIC_ASSESSMENT` |
 | 0.7.0 | 2026-11-22 | Intensidad normalizada a la voz propia sin calibración (§10.1): `I = 1` a la voz normal del enrolamiento, dosis comparables entre celulares, `ownVoiceRefDbfs` en la jornada y en los CSV; `D_d` oculta en la interfaz |
 | 0.8.0 | 2026-11-22 | Captura que avisa y pausa ante micrófono perdido, audio suspendido o página oculta, con wake lock; autoguardado periódico de la jornada con recuperación tras cierre inesperado (§12.2); `parameters` del CSV solo en la primera fila (§13); exportación del CSV por bloques de 10 000 filas, sin un texto único del tamaño del documento, y exportación optativa comprimida `.csv.gz` (§13); contrato de envío de resúmenes de jornada a una base analítica, con `sessionUuid` y `deviceId` optativos (§14.1) |
+| 0.9.0 | 2026-11-25 | Referencia vocal estandarizada (§10.1): paso propio de 30 s de lectura del texto estándar en voz habitual, obligatorio sin calibración; `A_ref` = mediana de la fonación aceptada, con P10 y P90; `ownVoiceRef` y `capture` (estado del control automático de ganancia, supresión de ruido y cancelación de eco) en la jornada, los parámetros del CSV y el contrato de envío (§14.1). Hay que volver a ejecutar `supabase/workday_sync.sql` antes de enviar jornadas 0.9.0 |
 
 ## 23. Evaluación acústica PRE–POST
 
@@ -847,7 +906,7 @@ Evaluación breve y estandarizada al comienzo y al final de la jornada, distinta
 | Dimensión | Qué mide | Variables |
 |---|---|---|
 | Exposición | Cómo se usó la voz | `D_k`, F0, intensidad, fonación, pausas |
-| Respuesta subjetiva | Cómo percibe la persona su voz | ΔF (fatiga), ΔE (esfuerzo), molestia, sequedad |
+| Respuesta subjetiva | Cómo percibe la persona su voz | ΔF (fatiga, EVA), ΔE (esfuerzo, Borg CR10 adaptada), sequedad, molestia |
 | Respuesta acústica | Si cambió objetivamente la señal vocal | ΔCPPS, ΔHNR, ΔF0 y otras |
 
 La salida se denomina **«Cambio acústico PRE–POST»**, nunca «fatiga»: un cambio acústico no equivale a fatiga, y puede haber fatiga sin cambio acústico detectable. Los valores se muestran de forma descriptiva y sin puntos de corte clínicos durante la fase experimental.
@@ -856,9 +915,32 @@ La salida se denomina **«Cambio acústico PRE–POST»**, nunca «fatiga»: un 
 
 En PRE y en POST se repite exactamente lo mismo: las mismas preguntas, la misma vocal, el mismo texto, el mismo celular y micrófono, la misma distancia y postura boca–micrófono, y el mismo algoritmo.
 
-1. EVA 0-100 de fatiga, esfuerzo, molestia y sequedad.
-2. Vocal /a/ sostenida, cómoda, a tono y volumen habituales: toma de 5 s.
-3. Lectura del texto estándar en voz de clase: toma de 25 s. El texto lleva unos 20 s y el silencio final se descarta como pausa.
+1. Vocal /a/ sostenida, cómoda, a tono y volumen habituales: toma de 5 s.
+2. Lectura del texto estándar en voz de clase: toma de 25 s. El texto lleva unos 20 s y el silencio final se descarta como pausa.
+3. Esfuerzo para producir la voz: escala Borg CR10 adaptada (abajo).
+4. Cansancio de la voz: EVA 0–100, de «Voz completamente descansada» a «Máximo cansancio vocal imaginable».
+5. Sequedad de la garganta (EVA 0–100, de «Garganta nada seca / bien hidratada» a «Máxima sequedad imaginable») y molestia o irritación en la garganta (EVA 0–100, de «Ninguna molestia / Nada en absoluto» a «Máxima molestia imaginable»).
+
+Las preguntas siguen el protocolo del proyecto (guion del evaluador y hoja de respuesta): se responden una vez por momento, después de las dos tareas, en ese orden y con su consigna en pantalla cada vez. La consigna del esfuerzo dice que se califica cuánto cuesta emitir el sonido, no qué tan fuerte suena la voz ni el cansancio general; la de la fatiga pide dejar de lado el esfuerzo recién calificado. Como en la app la docente responde sola, la consigna del esfuerzo dice «elegí la frase» donde el guion del evaluador dice «señalame o decime la frase».
+
+**Esfuerzo (Borg CR10 adaptada).** La persona elige una de diez frases, sin ver números, y la app guarda el valor de la clave del protocolo:
+
+| Frase | Valor |
+|---|---|
+| Ningún esfuerzo / Nada en absoluto | 0 |
+| Extremadamente ligero (apenas perceptible) | 0,5 |
+| Muy ligero | 1 |
+| Ligero | 2 |
+| Moderado | 3 |
+| Algo fuerte | 4 |
+| Fuerte | 5 |
+| Muy fuerte | 7 |
+| Extremadamente fuerte | 9 |
+| Esfuerzo máximo absoluto | 10 |
+
+Es una adaptación de la Borg CR10: en la original, «extremadamente fuerte» vale 10 y el máximo absoluto queda por encima de 10. Las distancias entre frases no son iguales, a propósito; el número sale de la clave. La clave en papel admite 6 y 8 cuando la persona expresa un esfuerzo intermedio; la app ofrece solo las diez frases de la hoja de respuesta, así que en la app no aparecen, pero un registro cargado desde papel los puede tener. ΔEsfuerzo = CR10 POST − CR10 PRE.
+
+**Familiarización.** Antes de la primera toma PRE en un celular, la vista docente muestra una sola vez los tres ejemplos de referencia del esfuerzo (extremadamente ligero, moderado y máximo absoluto) y pide tocar «Entendido» para seguir.
 
 Cada toma empieza con 1 s de silencio, que sirve de referencia de ruido. El micrófono debe estar conectado y libre: la toma no se puede hacer mientras se mide la jornada.
 
@@ -901,7 +983,7 @@ Las tomas rechazadas no se guardan. Las tomas con advertencia se guardan con esa
 
 ### 23.5 Datos y exportación
 
-Las EVA y los resultados se guardan en el navegador durante el día, para que el PRE de la mañana siga disponible en el POST. Al guardar la jornada pasan al registro `vd-des-workday/1`, en el campo `assessment`; la fatiga sigue en `fatigue`. El botón «Exportar evaluación (CSV)» genera el registro VD-DES `VOICE_ACOUSTIC_ASSESSMENT`, con una fila por momento (PRE/POST) y tarea (VOWEL/SPEECH). Cada fila incluye las medidas, la calidad de señal, la versión del algoritmo, los parámetros de pitch y cepstrales, la frecuencia de muestreo, el micrófono, la calibración, `audio_retained`, el LTAS y el cepstro medio.
+El esfuerzo, las EVA y los resultados se guardan en el navegador durante el día, para que el PRE de la mañana siga disponible en el POST. Al guardar la jornada pasan al registro `vd-des-workday/1`, en el campo `assessment`: `effortBorg` (`pre` y `post`, valores de la clave o `null`), `vas` con `dryness` y `discomfort`, y los resultados; la fatiga sigue en `fatigue`. Los registros anteriores a la escala Borg tienen el esfuerzo como EVA 0–100 en `assessment.vas.effort`: siguen siendo válidos, pero no se comparan con `effortBorg`, porque son escalas distintas. Un estado del día guardado antes del cambio descarta su EVA de esfuerzo al recargarse. El CSV de resúmenes agrega `effort_borg_pre`, `effort_borg_post`, `dryness_pre`, `dryness_post`, `discomfort_pre` y `discomfort_post`. El botón «Exportar evaluación (CSV)» genera el registro VD-DES `VOICE_ACOUSTIC_ASSESSMENT`, con una fila por momento (PRE/POST) y tarea (VOWEL/SPEECH). Cada fila incluye las medidas, la calidad de señal, la versión del algoritmo, los parámetros de pitch y cepstrales, la frecuencia de muestreo, el micrófono, la calibración, `audio_retained`, el LTAS y el cepstro medio.
 
 ### 23.6 Validez y uso científico
 
@@ -912,3 +994,41 @@ Las EVA y los resultados se guardan en el navegador durante el día, para que el
   - las pausas no alteran el CPPS;
   - un jitter de σ = 1 % se mide como 0,9 % y un shimmer de σ = 5 % como 4,1 %, porque cada ciclo medido mezcla dos ciclos sintéticos.
 - El cambio ΔA = A_POST − A_PRE se estudia primero variable por variable (`D_k` → ΔF, ΔE, ΔCPPS, ΔHNR, ΔF0). Un índice combinado se construiría después, con coeficientes estimados en una cohorte de desarrollo y validados externamente, nunca con pesos arbitrarios.
+
+## 24. Recuperación después de la jornada
+
+La hipótesis del proyecto es `D_k` → fatiga relevante → recuperación insuficiente. ΔF solo describe el final de la jornada; dos jornadas con el mismo ΔF pueden recuperarse de forma muy distinta. Por eso, después de la jornada se registra la trayectoria de fatiga F(t).
+
+### 24.1 Horarios fijos
+
+La docente registra la EVA de fatiga (0-100) en «Mi jornada», sin micrófono, en cinco horarios contados desde el fin de la jornada (`startedAt + durationS`): +30 min, +1 h, +2 h, +4 h y la mañana siguiente. Los horarios son fijos para que todas las jornadas tengan puntos comparables. Cada uno se abre 5 min antes de su hora y se cierra cuando se abre el siguiente; el de +4 h se cierra a las +6 h. La mañana siguiente es la primera franja de 05:00 a 12:00 (hora local) que sigue abierta a las +8 h: la del día siguiente tras un turno de día y la del mismo día tras un turno noche que termina de madrugada. Nunca se abre antes de las +8 h y dura al menos 4 h. Un horario no registrado queda como «No registrado»: no se completa después ni se interpola. Cada horario se registra una sola vez. Los horarios se eligieron según Hunter y Titze, que observaron cerca del 90 % de recuperación a las 4–6 h y recuperación completa a las 12–18 h; son provisionales.
+
+Solo se registra en jornadas `live` y finalizadas. Cada punto se guarda tal cual en `fatigue.recovery`: `{ slot, at, minutes, value }`, con el horario (`R30`, `R60`, `R120`, `R240`, `NEXT`), la hora real, los minutos reales desde el fin de la jornada y la EVA. Volver a guardar la jornada conserva los puntos ya registrados. El registro sigue siendo `vd-des-workday/1`: el campo es optativo, los registros anteriores siguen siendo válidos y la base analítica lo recibe dentro de `fatigue`, sin cambios en el servidor.
+
+### 24.2 Índices
+
+Los índices no se guardan; se calculan a partir de los puntos, para poder recalcularlos si cambia su definición. Con t = 0 al fin de la jornada y F(0) = F_post:
+
+- ΔF = F_post − F_pre;
+- R(t) = (F_post − F(t)) / ΔF, la parte del aumento de fatiga ya recuperada;
+- T₅₀ y T₉₀: primer tiempo en que R alcanza 0,5 y 0,9, con interpolación lineal entre puntos (R = 0 en t = 0);
+- AUC_F = ∫ max(0, F(t) − F_pre) dt, de t = 0 al último punto, por trapecios, en EVA·h, junto con ese horizonte.
+
+R, T₅₀ y T₉₀ requieren ΔF > 0; si la fatiga no subió, no hay nada que recuperar y quedan vacíos. Si un nivel no se alcanzó en el último punto, el tiempo queda censurado (se muestra como «> último horario»), nunca extrapolado. AUC_F depende del horizonte: solo se comparan jornadas con el mismo último horario. El CSV de resúmenes agrega `recovery_points`, `recovery_t50_min`, `recovery_t90_min`, `recovery_auc_f` y `recovery_horizon_min`.
+
+### 24.3 Avisos
+
+Una página web no puede despertar el celular por sí sola, así que hay dos canales, sin servidor:
+
+- **Calendario.** En el panel de recuperación, «Agregar los horarios al calendario (.ics)» descarga un archivo iCalendar (RFC 5545) con un evento por horario pendiente, desde su hora hasta su cierre, y una alarma al comienzo. El calendario del celular avisa aunque la app esté cerrada. El archivo no lleva el código de la docente: el identificador de cada evento usa el `sessionUuid` o un hash del identificador de la jornada.
+- **Notificación del navegador.** «Activar avisos del navegador» pide el permiso. Mientras la app está abierta, al llegar cada horario se muestra una notificación (si hay permiso) y siempre un mensaje dentro de la app. Si la página estuvo dormida, al volver a mostrarse avisa los horarios que llegaron y siguen abiertos. Cada horario se avisa una sola vez y nunca uno ya registrado. Algunos navegadores móviles solo notifican mediante un *service worker*; en ellos queda el mensaje dentro de la app y el calendario.
+
+### 24.4 Desenlaces en Analítica
+
+- **ΔF**: F_post − F_pre; caso si ΔF ≥ umbral.
+- **AUC_F (0 a 4 h)**: el área de §24.2 sobre un horizonte fijo de 240 min, comparable entre jornadas. Necesita un registro desde los 235 min (el de +4 h se abre 5 min antes), cuyo valor se mantiene hasta los 240 min; un punto posterior a los 240 min se interpola. Caso si AUC_F ≥ umbral.
+- **T₉₀**: un T₉₀ censurado no es un valor y queda fuera de la distribución y de la regresión. Para la ROC, una jornada es caso si no recuperó el 90 % en el umbral: con T₉₀ observado, si T₉₀ > umbral; con T₉₀ censurado, solo si se siguió al menos hasta el umbral (si no, queda sin clasificar). Si la fatiga no subió, no hay nada que recuperar y es control.
+
+### 24.5 Limitaciones
+
+Los puntos dependen de que la docente registre en cada horario: una jornada con horarios no registrados tiene índices menos precisos o censurados. Los índices son descriptivos y los umbrales de caso son provisionales.

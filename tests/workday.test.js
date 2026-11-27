@@ -137,3 +137,34 @@ describe('JSON export / import', () => {
     await assert.rejects(importWorkdays(repo, '{"format":"other"}'), /format/);
   });
 });
+
+describe('own-voice reference and capture settings in the workday (spec §10.1)', () => {
+  const reference = {
+    method: 'connected_speech', textId: 'viento-norte-sol-v1',
+    p10Dbfs: -36.4, p50Dbfs: -31.2, p90Dbfs: -28.9, durationS: 30, validS: 17.6,
+  };
+  const capture = { autoGainControl: false, noiseSuppression: false, echoCancellation: null };
+  const build = (load) => buildWorkday({ meta, load, series: sessionFixture().series, startedAt, algorithmVersion: '0.9.0', source: 'live' });
+
+  it('keeps the reference statistics and the browser processing state of the session', () => {
+    const { load } = sessionFixture();
+    const w = build({ ...load, units: 'normalized', ownVoiceReferenceDbfs: -31.2, ownVoiceReference: reference, capture });
+    assert.deepEqual(w.ownVoiceRef, reference);
+    assert.deepEqual(w.capture, capture);
+    assert.equal(w.ownVoiceRefDbfs, -31.2);
+  });
+
+  it('adds them only when the session has them, so earlier records keep their shape', () => {
+    const w = build(sessionFixture().load);
+    assert.equal('ownVoiceRef' in w, false);
+    assert.equal('capture' in w, false);
+  });
+
+  it('rejects malformed values', () => {
+    const { load } = sessionFixture();
+    const base = { ...load, units: 'normalized', ownVoiceReferenceDbfs: -31.2 };
+    assert.throws(() => build({ ...base, capture: { ...capture, autoGainControl: 'off' } }), /capture\.autoGainControl/);
+    assert.throws(() => build({ ...base, ownVoiceReference: { ...reference, p10Dbfs: 'x' } }), /ownVoiceRef\.p10Dbfs/);
+    assert.throws(() => build({ ...base, ownVoiceReference: { ...reference, extra: 1 } }), /ownVoiceRef\.extra/);
+  });
+});

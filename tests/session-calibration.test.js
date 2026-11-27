@@ -43,6 +43,9 @@ async function prepare(ctx) {
   const e = ctx.session.enroll();
   ctx.send(voice, framesFor(15));
   await e;
+  const r = ctx.session.captureVoiceReference(); // spec §10.1: standard text, habitual voice
+  ctx.send(voice, framesFor(30));
+  await r;
 }
 
 const rowsOf = (session) =>

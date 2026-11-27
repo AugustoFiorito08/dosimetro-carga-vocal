@@ -1,10 +1,14 @@
 // Workday record (vd-des-workday/1): the summary of one measured session that the
 // dashboards aggregate. It never holds audio or per-frame data, only codes, doses,
-// percentiles, a per-minute dose timeline, context events, the fatigue VAS and, when done,
+// percentiles, a per-minute dose timeline, optionally a per-second series of phonated time and
+// F0·I (src/store/second-series.js), context events, the fatigue VAS (PRE, POST and the
+// recovery points recorded afterwards, src/store/recovery.js) and, when done,
 // the PRE/POST voice assessment (VAS and acoustic measures; spec §23).
 import { describe } from '../stats/descriptive.js';
 import { SCORE_DOSES } from '../ui/score-series.js';
-import { TASKS, TIMEPOINTS, retainsAudio } from './voice-assessment.js';
+import { BORG_VALUES, TASKS, TIMEPOINTS, retainsAudio } from './voice-assessment.js';
+import { RECOVERY_POINT_FIELDS, RECOVERY_SLOTS } from './recovery.js';
+import { validateSecondSeries } from './second-series.js';
 
 export const WORKDAY_SCHEMA = 'vd-des-workday/1';
 
@@ -23,6 +27,11 @@ const CODE = /^[A-Za-z0-9._-]{1,32}$/;
 /** Optional sync identity (spec §14): a random session UUID and a random per-install device id. */
 export const SESSION_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const DEVICE_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
+
+/** Optional `ownVoiceRef` (spec §10.1): how A_0 was taken and how steady it was. */
+export const OWN_VOICE_REF_FIELDS = Object.freeze(['method', 'textId', 'p10Dbfs', 'p50Dbfs', 'p90Dbfs', 'durationS', 'validS']);
+/** Optional `capture`: browser processing of the microphone track, true / false or null when unknown. */
+export const CAPTURE_FIELDS = Object.freeze(['autoGainControl', 'noiseSuppression', 'echoCancellation']);
 
 export function validateCode(name, value) {
   if (typeof value !== 'string' || !CODE.test(value)) {
@@ -76,9 +85,11 @@ function minuteTimeline(series) {
  * @param {Date} args.startedAt
  * @param {string} [args.sessionUuid] random UUID of the session, idempotency key of the sync (spec §14)
  * @param {string} [args.deviceId] random id of this installation (spec §14); never a hardware id
+ * @param {ReturnType<import('./second-series.js').createSecondSeries>} [args.seconds] per-second series of the session
  */
-export function buildWorkday({ meta, load, series, startedAt, algorithmVersion, source, sessionUuid, deviceId }) {
+export function buildWorkday({ meta, load, series, startedAt, algorithmVersion, source, sessionUuid, deviceId, seconds }) {
   const m = load.metrics;
+  const perSecond = seconds?.toJSON() ?? null;
   const workday = {
     schema: WORKDAY_SCHEMA,
     id: workdayId(startedAt, meta.participantId),
@@ -105,6 +116,9 @@ export function buildWorkday({ meta, load, series, startedAt, algorithmVersion, 
     // Optional, only when given, so records without them keep their exact shape.
     ...(sessionUuid === undefined ? {} : { sessionUuid }),
     ...(deviceId === undefined ? {} : { deviceId }),
+    ...(load.ownVoiceReference ? { ownVoiceRef: { ...load.ownVoiceReference } } : {}),
+    ...(load.capture ? { capture: { ...load.capture } } : {}),
+    ...(perSecond ? { perSecond } : {}),
   };
   return validateWorkday(workday);
 }
@@ -114,9 +128,49 @@ function validateAssessment(a) {
     validateVas(`assessment.vas.${item}.pre`, pre ?? null);
     validateVas(`assessment.vas.${item}.post`, post ?? null);
   }
+  // Records before the Borg scale have no effortBorg (their effort is a VAS in assessment.vas).
+  for (const tp of ['pre', 'post']) {
+    const v = a.effortBorg?.[tp] ?? null;
+    if (v !== null && !BORG_VALUES.includes(v)) throw new RangeError(`assessment.effortBorg.${tp} must be a Borg CR10 value (${BORG_VALUES.join(', ')}) or null, got ${v}`);
+  }
   for (const r of a.results ?? []) {
     if (!TIMEPOINTS.includes(r.timepoint) || !TASKS.includes(r.task)) throw new RangeError(`assessment result needs a PRE/POST timepoint and a VOWEL/SPEECH task`);
     if (retainsAudio(r)) throw new RangeError('assessment results must not retain audio');
+  }
+}
+
+function validateOwnVoiceRef(r) {
+  if (typeof r !== 'object' || r === null) throw new RangeError('ownVoiceRef must be an object');
+  for (const [key, value] of Object.entries(r)) {
+    if (!OWN_VOICE_REF_FIELDS.includes(key)) throw new RangeError(`unknown field ownVoiceRef.${key}`);
+    const text = key === 'method' || key === 'textId';
+    const ok = value === null || (text ? typeof value === 'string' && value.length <= 64 : Number.isFinite(value));
+    if (!ok) throw new RangeError(`ownVoiceRef.${key} must be ${text ? 'a short string' : 'a finite number'} or null, got ${value}`);
+  }
+}
+
+function validateCapture(c) {
+  if (typeof c !== 'object' || c === null) throw new RangeError('capture must be an object');
+  for (const [key, value] of Object.entries(c)) {
+    if (!CAPTURE_FIELDS.includes(key)) throw new RangeError(`unknown field capture.${key}`);
+    if (value !== null && typeof value !== 'boolean') throw new RangeError(`capture.${key} must be true, false or null, got ${value}`);
+  }
+}
+
+/** Optional `fatigue.recovery` (hito 10): fatigue VAS points recorded after the workday. */
+function validateRecovery(points) {
+  if (!Array.isArray(points)) throw new RangeError('fatigue.recovery must be an array');
+  const seen = new Set();
+  for (const p of points) {
+    if (typeof p !== 'object' || p === null) throw new RangeError('fatigue.recovery items must be objects');
+    const unknown = Object.keys(p).find((k) => !RECOVERY_POINT_FIELDS.includes(k));
+    if (unknown) throw new RangeError(`unknown field fatigue.recovery.${unknown}`);
+    if (!RECOVERY_SLOTS.some((s) => s.id === p.slot)) throw new RangeError(`unknown fatigue.recovery slot ${p.slot}`);
+    if (seen.has(p.slot)) throw new RangeError(`fatigue.recovery slot ${p.slot} is repeated`);
+    seen.add(p.slot);
+    if (typeof p.at !== 'string' || Number.isNaN(Date.parse(p.at))) throw new RangeError('fatigue.recovery.at must be an ISO date');
+    if (typeof p.minutes !== 'number' || !Number.isFinite(p.minutes) || p.minutes < 0) throw new RangeError('fatigue.recovery.minutes must be a number >= 0');
+    validateVas('fatigue.recovery.value', p.value ?? NaN);
   }
 }
 
@@ -136,9 +190,13 @@ export function validateWorkday(w) {
   if (!(w.durationS >= 0) || !(w.phonationS >= 0)) throw new RangeError('durations must be >= 0');
   validateVas('fatigue.pre', w.fatigue?.pre ?? null);
   validateVas('fatigue.post', w.fatigue?.post ?? null);
+  if (w.fatigue?.recovery !== undefined) validateRecovery(w.fatigue.recovery);
   if (w.assessment) validateAssessment(w.assessment);
   if (!WORKDAY_SOURCES.includes(w.source)) throw new RangeError(`source must be one of ${WORKDAY_SOURCES.join(', ')}`);
   if (w.checkpoint !== undefined && w.checkpoint !== null) validateCheckpoint(w.checkpoint);
+  if (w.ownVoiceRef !== undefined) validateOwnVoiceRef(w.ownVoiceRef);
+  if (w.capture !== undefined) validateCapture(w.capture);
+  if (w.perSecond !== undefined) validateSecondSeries(w.perSecond);
   if (w.sessionUuid !== undefined && !(typeof w.sessionUuid === 'string' && SESSION_UUID_PATTERN.test(w.sessionUuid))) {
     throw new RangeError(`sessionUuid must be a UUID, got "${w.sessionUuid}"`);
   }

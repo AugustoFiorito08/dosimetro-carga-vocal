@@ -94,6 +94,10 @@ describe('session controller (calibrate -> enrol -> measure)', () => {
     send(session, voice, framesFor(15));
     const profile = await enrolled;
     assert.ok(profile.prototypes.length >= 1 && profile.prototypes.length <= 8);
+    assert.throws(() => session.start(), (e) => e.code === 'voice_reference_required');
+    const reference = session.captureVoiceReference();
+    send(session, voice, framesFor(30));
+    await reference;
 
     session.start();
     send(session, voice, 10);
@@ -256,6 +260,9 @@ describe('session controller with a DC offset on the input', () => {
     const enrolled = session.enroll();
     send(session, voice, frames(15));
     await enrolled;
+    const reference = session.captureVoiceReference();
+    send(session, voice, frames(30));
+    await reference;
     session.start();
     send(session, voice, 10);
     assert.equal(session.latest.analysis.category, 'fonacion_atribuida');

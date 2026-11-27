@@ -110,7 +110,7 @@ export function createScoreChart(root, { series, liveIntervalMs = 700 } = {}) {
     const to = series.endTime;
     if (from === null) return null;
     const span = Math.max(to - from, 1);
-    const width = canvases.f0.clientWidth || 1;
+    const width = canvases.phi.clientWidth || 1; // phonation: the one track every view shows
     const buckets = Math.max(1, Math.floor(width / COLUMN_PX));
     return {
       from,
@@ -277,7 +277,7 @@ export function createScoreChart(root, { series, liveIntervalMs = 700 } = {}) {
     );
     tooltip.hidden = false;
     const box = root.querySelector('.score-tracks').getBoundingClientRect();
-    const plot = canvases.f0.getBoundingClientRect();
+    const plot = canvases.phi.getBoundingClientRect();
     const left = plot.left - box.left + hoverX;
     tooltip.style.left = `${Math.min(box.width - tooltip.offsetWidth - 4, Math.max(4, left + 12))}px`;
   }
@@ -323,7 +323,7 @@ export function createScoreChart(root, { series, liveIntervalMs = 700 } = {}) {
     c.addEventListener('pointermove', onMove);
     c.addEventListener('pointerleave', onLeave);
   }
-  new ResizeObserver(() => schedule(true)).observe(canvases.f0);
+  new ResizeObserver(() => schedule(true)).observe(canvases.phi);
 
   return {
     /** New data arrived (throttled redraw). */

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createScoreSeries } from '../src/ui/score-series.js';
 import { CHECKPOINT_STATUSES, EVENT_SOURCES, EVENT_TYPES, WORKDAY_SCHEMA, WORKDAY_SOURCES, buildWorkday, validateWorkday } from '../src/store/workday.js';
 import { generateDemoWorkdays } from '../src/store/demo-data.js';
+import { MAX_SERIES_SECONDS, createSecondSeries } from '../src/store/second-series.js';
 import { createMemoryRepository } from '../src/store/workday-repository.js';
 import { EXPORT_FORMAT, importWorkdays } from '../src/store/workday-io.js';
 import {
@@ -180,5 +181,94 @@ describe('JSON Schema of the sync record (for the backend)', () => {
 
   it('is plain JSON', () => {
     assert.deepEqual(JSON.parse(JSON.stringify(s)), s);
+  });
+});
+
+describe('own-voice reference and capture settings in the sync contract', () => {
+  const reference = {
+    method: 'connected_speech', textId: 'viento-norte-sol-v1',
+    p10Dbfs: -36.4, p50Dbfs: -31.2, p90Dbfs: -28.9, durationS: 30, validS: 17.6,
+  };
+  const capture = { autoGainControl: false, noiseSuppression: null, echoCancellation: false };
+
+  it('are part of the allow-list and the JSON schema', () => {
+    assert.ok(SYNC_FIELDS.includes('ownVoiceRef'));
+    assert.ok(SYNC_FIELDS.includes('capture'));
+    assert.ok(WORKDAY_SYNC_JSON_SCHEMA.properties.ownVoiceRef);
+    assert.ok(WORKDAY_SYNC_JSON_SCHEMA.properties.capture);
+  });
+
+  it('travel unchanged in a synced record', () => {
+    const record = toSyncRecord({ ...workday(), ownVoiceRef: reference, capture });
+    assert.deepEqual(record.ownVoiceRef, reference);
+    assert.deepEqual(record.capture, capture);
+  });
+});
+
+describe('Borg CR10 effort in the sync contract', () => {
+  it('travels inside the assessment and the JSON schema bounds it to 0-10', () => {
+    const w = workday();
+    const record = toSyncRecord({ ...w, assessment: { ...w.assessment, effortBorg: { pre: 2, post: 7 } } });
+    assert.deepEqual(record.assessment.effortBorg, { pre: 2, post: 7 });
+    const borg = WORKDAY_SYNC_JSON_SCHEMA.properties.assessment.properties.effortBorg;
+    assert.deepEqual(borg.properties.pre, { type: ['number', 'null'], enum: [0, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, null] });
+  });
+});
+
+describe('per-second series in the workday and the sync contract (perSecond)', () => {
+  const series = (seconds, { phonation = (k) => (k % 3 ? 1 : 0), f0I = (k) => (k % 3 ? 270 : 0) } = {}) => {
+    const s = createSecondSeries();
+    for (let k = 0; k < seconds; k++) s.push({ dt: 1, phi: phonation(k) > 0 ? 1 : 0, f0: 180, intensity: f0I(k) / 180 });
+    return s;
+  };
+
+  it('buildWorkday adds it only when the session has one, so earlier records keep their shape', () => {
+    const w = workday({ seconds: series(180) });
+    assert.equal(w.perSecond.phonation.length, 180);
+    assert.equal(w.perSecond.f0I.length, 180);
+    assert.equal(w.perSecond.phonation.reduce((a, b) => a + b, 0), w.phonationS);
+    assert.equal('perSecond' in workday(), false);
+    assert.equal('perSecond' in workday({ seconds: createSecondSeries() }), false);
+  });
+
+  it('records without it stay valid, locally and for sync', () => {
+    for (const w of generateDemoWorkdays({ seed: 3 }).slice(0, 5)) {
+      assert.equal(w.perSecond, undefined);
+      assert.doesNotThrow(() => validateSyncRecord(toSyncRecord(w)));
+    }
+  });
+
+  it('rejects malformed series', () => {
+    const base = workday({ seconds: series(10) });
+    const bad = (perSecond) => assert.throws(() => validateWorkday({ ...base, perSecond }), RangeError);
+    bad({ phonation: [1, 1], f0I: [1] });
+    bad({ phonation: [1.5], f0I: [1] });
+    bad({ phonation: [-0.1], f0I: [1] });
+    bad({ phonation: [1], f0I: [-1] });
+    bad({ phonation: [1], f0I: [Number.NaN] });
+    bad({ phonation: [1], f0I: [1], extra: [] });
+    bad({ phonation: new Array(MAX_SERIES_SECONDS + 1).fill(0), f0I: new Array(MAX_SERIES_SECONDS + 1).fill(0) });
+  });
+
+  it('is in the allow-list and the JSON schema', () => {
+    assert.ok(SYNC_FIELDS.includes('perSecond'));
+    const p = WORKDAY_SYNC_JSON_SCHEMA.properties.perSecond;
+    assert.equal(p.additionalProperties, false);
+    assert.equal(p.properties.phonation.maxItems, MAX_SERIES_SECONDS);
+    assert.equal(p.properties.phonation.items.maximum, 1);
+  });
+
+  it('an 8-hour series travels unchanged and fits one upload (2 MB)', () => {
+    const w = workday({ seconds: series(8 * 3600, { f0I: (k) => (k % 3 ? 180 * (1 + (k % 97) / 1000) : 0) }) });
+    const payload = buildSyncPayload([w]);
+    const back = JSON.parse(JSON.stringify(payload));
+    assert.deepEqual(back.workdays[0].perSecond, w.perSecond);
+    assert.doesNotThrow(() => validateSyncPayload(back));
+    assert.ok(JSON.stringify(payload).length < 2 * 1024 * 1024, `${JSON.stringify(payload).length} bytes`);
+  });
+
+  it('long numeric arrays elsewhere are still refused as audio-like', () => {
+    const w = workday({ seconds: series(10) });
+    assert.throws(() => validateSyncRecord({ ...w, f0: { ...w.f0, raw: new Array(500).fill(1) } }), /audio-like/);
   });
 });

@@ -19,6 +19,7 @@ export const MODES = Object.freeze({
   CALIBRATING: 'calibrating',
   ACOUSTIC_CALIBRATING: 'acoustic_calibrating',
   ENROLLING: 'enrolling',
+  REFERENCING: 'referencing',
   RECORDING: 'recording',
   MEASURING: 'measuring',
   PAUSED: 'paused',
@@ -33,11 +34,25 @@ export const DEFAULT_SESSION_CONFIG = Object.freeze({
   enrollMinSeconds: 10,
   enrollMaxWallSeconds: 45, // give up if not enough valid voice within this audio time
   maxPrototypes: 8,
+  referenceSeconds: 30, // spec §10.1: standardised reading in the habitual voice
+  referenceMinValidSeconds: 8, // accepted phonation needed for A_0
   acousticCalibrationSeconds: 5, // reference tone capture (protocol §10.1)
   calibratedReferencePressure: 1, // P_0 in Pa (94 dB SPL) for calibrated sessions; a modelling convention
 });
 
 const CALIBRATION_PHASES = ['pre', 'post'];
+
+/** How A_0 was obtained (spec §10.1): reading a standard text in the habitual voice. */
+export const VOICE_REFERENCE_METHOD = 'connected_speech';
+
+const CAPTURE_SETTINGS = ['autoGainControl', 'noiseSuppression', 'echoCancellation'];
+
+/** Browser processing of the capture: true / false as reported, null when unknown. */
+function captureSettingsOf(settings) {
+  return Object.fromEntries(CAPTURE_SETTINGS.map((k) => [k, typeof settings?.[k] === 'boolean' ? settings[k] : null]));
+}
+
+const onOff = (value) => (value === null ? 'unknown' : value ? 'on' : 'off');
 
 const now = () => globalThis.performance?.now() ?? Date.now();
 
@@ -56,7 +71,10 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
   let noiseFloorRms = null;
   let profile = null;
   let enrolFrameDuration = null;
-  let voiceReference = null; // { rms, levelDbfs, seconds } of the normal voice in the enrolment (spec §10.1)
+  // A_0 of the standardised reading in the habitual voice (spec §10.1):
+  // { method, textId, rms, levelDbfs, p10Dbfs, p50Dbfs, p90Dbfs, durationS, validS }
+  let voiceReference = null;
+  let captureSettings = captureSettingsOf(null);
   let task = null; // { resolve, reject, onFrame } of the running calibration / enrolment
   let classifier = null;
   let load = null;
@@ -161,7 +179,6 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     let state = createFrameClassifier({ config: classifierConfig, noiseFloorRms });
     const vectors = [];
     const f0s = [];
-    const normalVoiceRms = []; // first half of the valid voice: the normal voice the guide asks for
     let validTime = 0;
     let elapsed = 0;
     let frameDuration = 0;
@@ -174,8 +191,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
           f0: f0s,
         });
         enrolFrameDuration = frameDuration;
-        const rms = quantile(normalVoiceRms, 0.5);
-        voiceReference = Object.freeze({ rms, levelDbfs: toDb(rms), seconds: normalVoiceRms.length * frameDuration });
+        voiceReference = null; // a new profile needs a new reference reading
         task.resolve(profile);
       } catch (error) {
         task.reject(error);
@@ -189,7 +205,6 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
       if (result.analysis.V === 1 && result.analysis.Q === 1) {
         vectors.push(result.analysis.features);
         f0s.push(result.analysis.f0);
-        if (validTime < cfg.enrollTargetSeconds / 2) normalVoiceRms.push(result.analysis.rms);
         validTime += dt;
       }
       latest = { analysis: result.analysis, load: null };
@@ -200,6 +215,63 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
         else task.reject(new Error(`only ${validTime.toFixed(1)} s of valid voice in ${elapsed.toFixed(1)} s; need ${cfg.enrollMinSeconds} s`));
       }
     });
+  }
+
+  /**
+   * Standardised own-voice reference (spec §10.1): reading the standard text in the
+   * habitual voice for `referenceSeconds`. A_0 is the median RMS of the frames accepted as
+   * the speaker's phonation (V = W = Q = 1); P10 and P90 show how steady the reading was.
+   * @param {{ textId?: string | null }} [options] id of the text read
+   */
+  function captureVoiceReference({ textId = null } = {}) {
+    if (profile === null) return Promise.reject(new Error('enrol the speaker before the voice reference'));
+    let state = createFrameClassifier({
+      profile,
+      config: { ...classifierConfig, identity: { ...classifierConfig?.identity, ...identityThresholds() } },
+      noiseFloorRms,
+    });
+    const accepted = [];
+    let validS = 0;
+    let elapsed = 0;
+    return beginTask(MODES.REFERENCING, (samples, dt) => {
+      const result = classifyFrame(state, samples, sampleRate);
+      state = result.state;
+      elapsed += dt;
+      const { V, W, Q } = result.analysis;
+      if (V === 1 && W === 1 && Q === 1) {
+        accepted.push(result.analysis.rms);
+        validS += dt;
+      }
+      latest = { analysis: result.analysis, load: null };
+      emit({ type: 'progress', mode, elapsed, validTime: validS, target: cfg.referenceSeconds });
+      if (elapsed < cfg.referenceSeconds - 1e-9) return;
+      if (validS < cfg.referenceMinValidSeconds) {
+        task.reject(Object.assign(
+          new Error(`only ${validS.toFixed(1)} s of your voice in ${elapsed.toFixed(1)} s; need ${cfg.referenceMinValidSeconds} s`),
+          { code: 'reference_too_short' },
+        ));
+        return;
+      }
+      const sorted = [...accepted].sort((a, b) => a - b);
+      const rms = quantile(sorted, 0.5, { sorted: true });
+      voiceReference = Object.freeze({
+        method: VOICE_REFERENCE_METHOD,
+        textId,
+        rms,
+        levelDbfs: toDb(rms),
+        p10Dbfs: toDb(quantile(sorted, 0.1, { sorted: true })),
+        p50Dbfs: toDb(rms),
+        p90Dbfs: toDb(quantile(sorted, 0.9, { sorted: true })),
+        durationS: elapsed,
+        validS,
+      });
+      task.resolve(voiceReference);
+    });
+  }
+
+  /** Browser processing reported for the capture track (getSettings()), recorded with the session. */
+  function setCaptureSettings(settings) {
+    captureSettings = captureSettingsOf(settings);
   }
 
   const identityThresholds = () => ({
@@ -262,6 +334,11 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
   function start() {
     if (mode !== MODES.IDLE) throw new Error(`cannot start measuring while ${mode}`);
     if (profile === null) throw new Error('enrol the speaker before starting a session');
+    if (acousticCalibration === null && voiceReference === null) {
+      throw Object.assign(new Error('take the voice reference (standard text, habitual voice) before starting'), {
+        code: 'voice_reference_required',
+      });
+    }
     if (distanceDoseOptions !== null && acousticCalibration === null) {
       throw Object.assign(new Error('the distance dose needs an acoustic calibration first'), {
         code: 'distance_dose_needs_calibration',
@@ -272,17 +349,18 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     postCalibration = null;
     drift = null;
     const calibrated = sessionCalibration !== null;
-    // Without calibration the intensity is normalised to the own normal voice: I = 1 there.
-    const normalized = !calibrated && voiceReference !== null;
+    // Without calibration the intensity is normalised to the own habitual voice: I = 1 there.
+    const normalized = !calibrated;
     const calibration = calibrated
       ? { pressureScale: sessionCalibration.coefficient }
       : normalized ? { pressureScale: 1 / voiceReference.rms } : {};
     classifier = createFrameClassifier({ profile, config: { ...classifierConfig, identity, ...calibration }, noiseFloorRms });
     load = createVocalLoadState(
       calibrated
-        ? { referencePressure: cfg.calibratedReferencePressure, ...loadOptions, calibrated: true, distanceDose: distanceDoseInput ?? undefined }
-        : { ...loadOptions, ownVoiceReferenceDbfs: normalized ? voiceReference.levelDbfs : null },
+        ? { referencePressure: cfg.calibratedReferencePressure, ...loadOptions, calibrated: true, distanceDose: distanceDoseInput ?? undefined, capture: captureSettings }
+        : { ...loadOptions, ownVoiceReference: voiceReference, capture: captureSettings },
     );
+    const ref = load.ownVoiceReference;
     const { pitch, quality, identity: id, noisePeriodicityMax, minVocalBandRatio } = classifier.config;
     sessionParams = {
       algorithmVersion: ALGORITHM_VERSION,
@@ -292,6 +370,14 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
         units: load.units,
         referencePressure: load.referencePressure,
         ownVoiceRefDbfs: load.ownVoiceReferenceDbfs ?? undefined,
+        ownVoiceRefMethod: ref?.method,
+        ownVoiceRefTextId: ref?.textId ?? undefined,
+        ownVoiceRefP10Dbfs: ref?.p10Dbfs,
+        ownVoiceRefP90Dbfs: ref?.p90Dbfs,
+        ownVoiceRefValidS: ref?.validS,
+        agc: onOff(load.capture.autoGainControl),
+        noiseSuppression: onOff(load.capture.noiseSuppression),
+        echoCancellation: onOff(load.capture.echoCancellation),
         noiseFloorRms,
         prototypes: profile.prototypes.length,
         acceptThreshold: id.acceptThreshold,
@@ -393,6 +479,8 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     handleMessage,
     calibrate,
     enroll,
+    captureVoiceReference,
+    setCaptureSettings,
     recordSample,
     start,
     pause,
@@ -416,6 +504,7 @@ export function createSessionController({ sampleRate, config, classifierConfig, 
     get distanceDoseOptions() { return distanceDoseOptions; },
     get profile() { return profile; },
     get voiceReference() { return voiceReference; },
+    get captureSettings() { return { ...captureSettings }; },
     get load() { return load; },
     get latest() { return latest; },
     get stats() { return { ...stats }; },

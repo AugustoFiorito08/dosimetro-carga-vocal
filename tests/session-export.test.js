@@ -28,6 +28,9 @@ async function readySession(options) {
   const e = session.enroll();
   send(voice, framesFor(15));
   await e;
+  const r = session.captureVoiceReference(); // spec §10.1: standard text, habitual voice
+  send(voice, framesFor(30));
+  await r;
   return { session, send };
 }
 
@@ -79,7 +82,7 @@ describe('session CSV', () => {
     const dt = N / SR;
     assert.deepEqual(rows.map((r) => Number(r[0])), [0, dt, 5 * dt]);
     assert.deepEqual(rows.map((r) => r[11]), ['fonacion_atribuida', 'fonacion_atribuida', 'silencio']);
-    assert.deepEqual(rows.map((r) => r[19]), ['0.8.0', '0.8.0', '0.8.0']);
+    assert.deepEqual(rows.map((r) => r[19]), ['0.9.0', '0.9.0', '0.9.0']);
     assert.match(rows[0][20], /^sampleRate=16000;beta=.*hStar=300;fStar=2;.*acceptThreshold=0\.65;rejectThreshold=0\.6;/);
     assert.match(rows[0][20], /;highPassHz=50$/);
     assert.deepEqual(rows.slice(1).map((r) => r[20]), ['', ''], 'parameters are written once, on the first row');
