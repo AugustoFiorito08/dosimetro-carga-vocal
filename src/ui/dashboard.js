@@ -11,7 +11,8 @@ import { buildWorkday, validateCode } from '../store/workday.js';
 import { STANDARD_TEXT_ID } from '../store/voice-assessment.js';
 import { createIndexedDbRepository } from '../store/workday-repository.js';
 import { createIndexedDbOutbox } from '../store/outbox.js';
-import { createSyncingRepository } from '../store/sync-service.js';
+import { createSyncingRepository, enqueueFrames } from '../store/sync-service.js';
+import { syncKey } from '../store/workday-sync.js';
 import { createOptInRepository } from '../store/sync-settings.js';
 import { bindAutosaveTriggers, createWorkdayAutosaver, recoverCheckpoints } from '../store/workday-autosave.js';
 import { createBoards } from './boards/boards.js';
@@ -225,9 +226,10 @@ function downloadText(text, fileName, type) {
 // the outbox only while the sync panel has it enabled.
 const localWorkdays = createIndexedDbRepository();
 const outbox = createIndexedDbOutbox();
-const syncPanel = createSyncPanel({ $, outbox, repository: localWorkdays, onPurged: () => boards.refresh() });
-// Primary frames of each saved workday (vd-des-frames/1): deleted with their workday.
+// Primary frames of each saved workday (vd-des-frames/1): deleted with their workday, sent
+// after it while the sync is enabled.
 const frameStore = createIndexedDbFrameStore();
+const syncPanel = createSyncPanel({ $, outbox, repository: localWorkdays, frames: frameStore, onPurged: () => boards.refresh() });
 // A rebuilt record of a saved workday keeps the recovery points recorded after it (hito 10).
 const workdayRepository = withFrameDeletion(preserveRecovery(createOptInRepository({
   repository: localWorkdays,
@@ -376,6 +378,10 @@ async function saveFrames(workday) {
   if (!encoded) return;
   try {
     await frameStore.put({ workdayId: workday.id, ...encoded });
+    if (syncPanel.isEnabled()) {
+      await enqueueFrames(outbox, { workdayId: workday.id, syncKey: syncKey(workday) });
+      syncPanel.flush();
+    }
   } catch (error) {
     say(`La jornada quedó guardada, pero no sus datos por trama: ${error.message}`, 'error');
   }

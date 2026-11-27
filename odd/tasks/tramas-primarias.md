@@ -19,8 +19,8 @@ Branch: `feat/tramas-primarias` (from `feat/vista-docente-movil`) · Delivery: a
 |---|---|---|---|---|
 | T1 | S4 | inline | done (RED→GREEN, 6 tests) | 7daf9ec |
 | T2 | S5 | inline | done (RED→GREEN, 5 tests) | 3475645 (amended) |
-| T3 | S2, S6 | inline | done (RED→GREEN, 4 tests + browser) | T3 commit |
-| T4 | S3, S7 | inline | pending | |
+| T3 | S2, S6 | inline | done (RED→GREEN, 4 tests + browser) | c4de02a |
+| T4 | S3, S7 | inline | done (RED→GREEN, 11 tests + browser with fake fetch) | T4 commit |
 | T5 | S2, S7 | inline | pending | |
 
 - T1 Frame codec: encode/decode `vd-des-frames/1` (typed columns, gzip, base64 parts under 2 MB).
@@ -40,3 +40,4 @@ Route evidence: no writer trigger (units depend on T1 and share sync files), so 
 - **L5** (2026-11-27) T1 done: codec vd-des-frames/1; 6 bytes/frame; worst case 8 h (random values) 4.05 MB raw, 3.27 MB base64 in 3 parts. Next: T2.
 - **L6** (2026-11-27) T2 done: frame replay matches the engine within ~1e-6 relative with varied levels; the bound is the level rounding (0.005 dB steps, at most 5.8e-4 in I per frame), reached when few levels repeat (test data: 6e-5). Per-second series: ~1 % at β = 0.03. A_0 and q adjustable. Next: T3.
 - **L7** (2026-11-27) T3 done: IndexedDB v3 store `frames`; frames saved after the workday, deleted with remove/clear (not with the sync purge). Browser: 424 frames, pause gap 2.99 s, own-voice A_0 kept; recomputed doses = stored within 1.4e-5. Not covered: autosaved checkpoints keep no frames (a recovered session has none). Next: T4.
+- **L8** (2026-11-27) T4 done: vd-des-frames-part/1 parts; transport sendFrames → upload_workday_frames; outbox item kind frames, after its workday, resumable from the failed part, purged after upload; SQL table workday_frames (FK cascade, RLS like workday_sync, PT425 while the workday is missing). Found in the browser: frames queued during the workday's run waited for the next poll; flush() now reruns once when called during a run. Browser (fake fetch, test values on localhost): upsert_workdays then upload_workday_frames (313 frames, 1 part, 532 chars), outbox and frames emptied. SQL not run against a real database. Next: T5.

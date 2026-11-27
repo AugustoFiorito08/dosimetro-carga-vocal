@@ -26,7 +26,7 @@ const FIELD_ERRORS = {
 const ERROR_HINTS = {
   unauthorized: 'el servidor no aceptó el token de subida (revisalo o pedí uno nuevo)',
   forbidden: 'la jornada es de una escuela distinta a la del token',
-  not_found: 'no se encontró la función upsert_workdays (¿se ejecutó el SQL en el proyecto?)',
+  not_found: 'no se encontró la función en el servidor (¿se ejecutó la última versión de supabase/workday_sync.sql?)',
 };
 
 const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -41,7 +41,7 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
  * @param {Storage} [deps.storage]
  * @param {Window} [deps.win]
  */
-export function createSyncPanel({ $, outbox, repository, onPurged, storage = globalThis.localStorage, win = globalThis.window }) {
+export function createSyncPanel({ $, outbox, repository, onPurged, storage = globalThis.localStorage, win = globalThis.window, frames = null }) {
   let settings = loadSyncSettings(storage);
   let service = null;
   let lastEvent = null;
@@ -75,6 +75,7 @@ export function createSyncPanel({ $, outbox, repository, onPurged, storage = glo
 
   function describeEvent(event) {
     if (!event) return '';
+    if (event.type === 'sent' && event.kind === 'frames') return ` Últimos datos por trama enviados a las ${clock(event.at)}${event.purged ? ' y borrados de este equipo' : ''}.`;
     if (event.type === 'sent') return ` Última jornada enviada a las ${clock(event.at)}${event.purged ? ' y borrada de este equipo' : ''}.`;
     if (event.type === 'retry') return ` Falló el intento ${event.attempts}; se reintenta a las ${clock(event.nextAttemptAt)}: ${describeError(event.error)}.`;
     if (event.type === 'rejected') return ` El servidor rechazó una jornada y no se reintentará: ${describeError(event.error)}.`;
@@ -88,11 +89,16 @@ export function createSyncPanel({ $, outbox, repository, onPurged, storage = glo
     let counts = { pending: 0, rejected: 0 };
     try {
       const items = await outbox.list();
-      counts = { pending: items.filter((i) => i.state === 'pending').length, rejected: items.filter((i) => i.state === 'rejected').length };
+      const workdays = items.filter((i) => i.kind !== 'frames');
+      counts = {
+        pending: workdays.filter((i) => i.state === 'pending').length,
+        rejected: workdays.filter((i) => i.state === 'rejected').length,
+        frames: items.filter((i) => i.kind === 'frames').length,
+      };
     } catch (error) {
       return setStatus(`No se pudo leer la cola de envío: ${error.message}`, 'error');
     }
-    const queue = `En cola: ${plural(counts.pending, 'jornada pendiente', 'jornadas pendientes')}${counts.rejected ? `, ${plural(counts.rejected, 'rechazada', 'rechazadas')}` : ''}.`;
+    const queue = `En cola: ${plural(counts.pending, 'jornada pendiente', 'jornadas pendientes')}${counts.rejected ? `, ${plural(counts.rejected, 'rechazada', 'rechazadas')}` : ''}${counts.frames ? `; datos por trama de ${plural(counts.frames, 'jornada', 'jornadas')}` : ''}.`;
     if (!isEnabled()) {
       setStatus(`${settings ? 'Credenciales guardadas; envío desactivado.' : 'Sin configurar: no se envía nada.'} ${queue}`);
       return;
@@ -116,6 +122,7 @@ export function createSyncPanel({ $, outbox, repository, onPurged, storage = glo
         transport,
         outbox,
         repository,
+        frames,
         onEvent: (event) => {
           lastEvent = { ...event, at: Date.now() };
           if (event.type === 'sent' && event.purged) onPurged?.();

@@ -26,6 +26,11 @@
 -- The per-second series (perSecond: phonated time and F0·I of each measured second, up to
 -- 86400 values each, about 0.4 MB for 8 h) is accepted the same way: run the file again
 -- before devices that record it start sending, or those records are rejected as unknown.
+-- The primary frames (vd-des-frames/1: level, F0, V/W/Q/Φ, category and SNR of every frame,
+-- no audio; about 2-4 MB per 8 h, gzipped) arrive after their workday through
+-- public.upload_workday_frames, in base64 parts under 2 MB kept in public.workday_frames.
+-- Run the file again before devices that keep frames start sending them; until then their
+-- frame uploads fail (404, function not found) and stay queued as rejected.
 
 create extension if not exists pgcrypto with schema extensions;
 
@@ -213,6 +218,104 @@ $$;
 
 revoke all on function public.upsert_workdays(jsonb) from public;
 grant execute on function public.upsert_workdays(jsonb) to anon, authenticated;
+
+-- ---------- primary frames (vd-des-frames/1) ----------
+-- One row per part of a workday's frame record, removed with its workday (on delete cascade,
+-- so delete_participant_workdays also removes the frames). Read by analysts like workday_sync.
+
+create table if not exists public.workday_frames (
+  sync_key    text not null references public.workday_sync (sync_key) on delete cascade,
+  part        integer not null check (part >= 0),
+  parts       integer not null check (parts between 1 and 64),
+  header      jsonb not null,                        -- vd-des-frames/1 header (same in every part)
+  data        text not null,                         -- base64 of this part of the gzipped record
+  received_at timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  primary key (sync_key, part)
+);
+
+alter table public.workday_frames enable row level security;
+revoke all on public.workday_frames from anon, authenticated;
+grant select on public.workday_frames to authenticated;
+
+drop policy if exists analysts_read_frames on public.workday_frames;
+create policy analysts_read_frames on public.workday_frames for select to authenticated
+  using (exists (
+    select 1 from public.workday_sync w join public.analysts a on a.user_id = (select auth.uid())
+    where w.sync_key = workday_frames.sync_key
+      and (a.school_id is null or a.school_id = w.school_id)
+  ));
+
+-- Errors: PT401/PT403 as above; PT425 (retried by the device) while the workday has not
+-- arrived yet; 22023 for a malformed part; PT413 for a body over 2 MB.
+create or replace function public.upload_workday_frames(payload jsonb)
+returns integer
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  token text := nullif(current_setting('request.headers', true)::jsonb ->> 'x-upload-token', '');
+  token_school text;
+  key text := payload ->> 'syncKey';
+  part_no integer;
+  total integer;
+  row_school text;
+begin
+  if token is null then
+    raise exception 'missing upload token' using errcode = 'PT401';
+  end if;
+  select t.school_id into token_school
+    from public.upload_tokens t
+   where t.token_hash = encode(extensions.digest(token, 'sha256'), 'hex')
+     and t.revoked_at is null;
+  if token_school is null then
+    raise exception 'invalid or revoked upload token' using errcode = 'PT401';
+  end if;
+
+  if octet_length(payload::text) > 2 * 1024 * 1024 then
+    raise exception 'frame part too large' using errcode = 'PT413';
+  end if;
+  if payload ->> 'format' is distinct from 'vd-des-frames-part/1'
+     or coalesce(key, '') = ''
+     or jsonb_typeof(payload -> 'part') is distinct from 'number'
+     or jsonb_typeof(payload -> 'parts') is distinct from 'number'
+     or jsonb_typeof(payload -> 'header') is distinct from 'object'
+     or jsonb_typeof(payload -> 'data') is distinct from 'string'
+     or payload #>> '{header,schema}' is distinct from 'vd-des-frames/1' then
+    raise exception 'payload must be a vd-des-frames-part/1 part' using errcode = '22023';
+  end if;
+  part_no := (payload ->> 'part')::integer;
+  total := (payload ->> 'parts')::integer;
+  if total < 1 or total > 64 or part_no < 0 or part_no >= total
+     or (payload ->> 'data') !~ '^[A-Za-z0-9+/]+=*$' then
+    raise exception 'frame part % of % is not valid', part_no, total using errcode = '22023';
+  end if;
+
+  select w.school_id into row_school from public.workday_sync w where w.sync_key = key;
+  if row_school is null then
+    raise exception 'workday % has not been received yet', key using errcode = 'PT425';
+  end if;
+  if row_school <> token_school then
+    raise exception 'the upload token cannot write frames of school %', row_school using errcode = 'PT403';
+  end if;
+
+  insert into public.workday_frames as f (sync_key, part, parts, header, data)
+  values (key, part_no, total, payload -> 'header', payload ->> 'data')
+  on conflict (sync_key, part) do update set
+    parts = excluded.parts,
+    header = excluded.header,
+    data = excluded.data,
+    updated_at = now();
+  -- A record re-sent in fewer parts leaves no stale tail.
+  delete from public.workday_frames f
+   where f.sync_key = key and f.part >= total;
+  return 1;
+end;
+$$;
+
+revoke all on function public.upload_workday_frames(jsonb) from public;
+grant execute on function public.upload_workday_frames(jsonb) to anon, authenticated;
 
 -- ---------- withdrawal of consent (spec §14.1) ----------
 -- Deletes every synced workday of a participant code. Service role only.

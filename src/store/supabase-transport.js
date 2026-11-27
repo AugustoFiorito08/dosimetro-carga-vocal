@@ -5,8 +5,11 @@
 // by design; access is decided by the function and RLS. Nothing here has a default
 // endpoint or credential: it sends nothing until it is configured (F3).
 import { validateSyncPayload } from './workday-sync.js';
+import { validateFramePart } from './frame-sync.js';
 
 export const SUPABASE_UPSERT_FUNCTION = 'upsert_workdays';
+/** Function that stores one part of a workday's primary frames (supabase/workday_sync.sql). */
+export const SUPABASE_FRAMES_FUNCTION = 'upload_workday_frames';
 export const DEFAULT_TIMEOUT_MS = 15000;
 const MAX_DETAIL_CHARS = 200;
 
@@ -59,7 +62,8 @@ function checkUrl(url) {
  * @param {string} config.uploadToken the upload token issued for this device or school
  * @param {typeof fetch} [config.fetch]
  * @param {number} [config.timeoutMs]
- * @returns {{ send(payload: object): Promise<{ status: number, accepted: number | null }> }}
+ * @returns {{ send(payload: object): Promise<{ status: number, accepted: number | null }>,
+ *   sendFrames(part: object): Promise<{ status: number, accepted: number | null }> }}
  */
 export function createSupabaseTransport(config = {}) {
   const { url, anonKey, uploadToken, timeoutMs = DEFAULT_TIMEOUT_MS, functionName = SUPABASE_UPSERT_FUNCTION, timers = globalThis } = config;
@@ -70,7 +74,7 @@ export function createSupabaseTransport(config = {}) {
   if (typeof uploadToken !== 'string' || !uploadToken) throw new RangeError('Supabase uploadToken is required');
   if (typeof fetch !== 'function') throw new TypeError('fetch is not available in this environment');
   if (!(timeoutMs > 0)) throw new RangeError(`timeoutMs must be > 0, got ${timeoutMs}`);
-  const endpoint = `${base}/rest/v1/rpc/${functionName}`;
+  const endpoint = (name) => `${base}/rest/v1/rpc/${name}`;
   const secrets = [uploadToken, anonKey];
 
   /** Server detail for the message, short and without our credentials. */
@@ -90,52 +94,58 @@ export function createSupabaseTransport(config = {}) {
     }
   }
 
+  /** POSTs `{ payload }` to an RPC function after `validate(payload)`; throws SyncTransportError. */
+  async function post(name, payload, validate) {
+    try {
+      validate(payload);
+    } catch (error) {
+      throw new SyncTransportError(`invalid payload: ${error.message}`, { code: 'invalid_payload', permanent: true });
+    }
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = timers.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+    let response;
+    try {
+      response = await fetch(endpoint(name), {
+        method: 'POST',
+        headers: {
+          apikey: anonKey,
+          Authorization: `Bearer ${anonKey}`,
+          'Content-Type': 'application/json',
+          'x-upload-token': uploadToken,
+        },
+        body: JSON.stringify({ payload }),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (timedOut) throw new SyncTransportError(`Supabase timeout after ${timeoutMs} ms`, { code: 'timeout', permanent: false });
+      throw new SyncTransportError(`Supabase network error: ${redact(error?.message ?? error)}`, { code: 'network', permanent: false });
+    } finally {
+      timers.clearTimeout(timer);
+    }
+    if (response.ok) {
+      let accepted = null;
+      try {
+        const text = await response.text();
+        const value = text ? JSON.parse(text) : null;
+        accepted = typeof value === 'number' ? value : null;
+      } catch {
+        accepted = null; // confirmed anyway: the status is what counts
+      }
+      return { status: response.status, accepted };
+    }
+    const { code, permanent } = classifyStatus(response.status);
+    const detail = await detailOf(response);
+    throw new SyncTransportError(`Supabase ${response.status} ${code}${detail ? `: ${detail}` : ''}`, { status: response.status, code, permanent });
+  }
+
   return {
-    async send(payload) {
-      try {
-        validateSyncPayload(payload);
-      } catch (error) {
-        throw new SyncTransportError(`invalid payload: ${error.message}`, { code: 'invalid_payload', permanent: true });
-      }
-      const controller = new AbortController();
-      let timedOut = false;
-      const timer = timers.setTimeout(() => {
-        timedOut = true;
-        controller.abort();
-      }, timeoutMs);
-      let response;
-      try {
-        response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            apikey: anonKey,
-            Authorization: `Bearer ${anonKey}`,
-            'Content-Type': 'application/json',
-            'x-upload-token': uploadToken,
-          },
-          body: JSON.stringify({ payload }),
-          signal: controller.signal,
-        });
-      } catch (error) {
-        if (timedOut) throw new SyncTransportError(`Supabase timeout after ${timeoutMs} ms`, { code: 'timeout', permanent: false });
-        throw new SyncTransportError(`Supabase network error: ${redact(error?.message ?? error)}`, { code: 'network', permanent: false });
-      } finally {
-        timers.clearTimeout(timer);
-      }
-      if (response.ok) {
-        let accepted = null;
-        try {
-          const text = await response.text();
-          const value = text ? JSON.parse(text) : null;
-          accepted = typeof value === 'number' ? value : null;
-        } catch {
-          accepted = null; // confirmed anyway: the status is what counts
-        }
-        return { status: response.status, accepted };
-      }
-      const { code, permanent } = classifyStatus(response.status);
-      const detail = await detailOf(response);
-      throw new SyncTransportError(`Supabase ${response.status} ${code}${detail ? `: ${detail}` : ''}`, { status: response.status, code, permanent });
-    },
+    /** One envelope of workday summaries (vd-des-workdays/1). */
+    send: (payload) => post(functionName, payload, validateSyncPayload),
+    /** One part of a workday's primary frames (vd-des-frames-part/1). */
+    sendFrames: (part) => post(SUPABASE_FRAMES_FUNCTION, part, validateFramePart),
   };
 }
