@@ -1,6 +1,7 @@
 // Per-device sync settings (spec §14.1, phase F3). The Supabase project url, its public
 // key and the upload token are typed on each device and kept only in that browser's
-// storage: the repository never holds a default endpoint or credential.
+// storage. (The role-based sign-in of odd/tasks/base-por-roles.md reads the url and public key
+// from src/app-config.js instead; the upload token never lives in the repository.)
 // - validateSyncSettings() checks the three fields and refuses secret keys, which must
 //   never reach a device (a secret key bypasses RLS).
 // - load/save/clear read and write one storage key; a corrupt or invalid entry counts as
@@ -42,9 +43,12 @@ function jwtRole(key) {
   }
 }
 
+/** True for a Supabase secret key (new format or a service_role JWT): it bypasses RLS and never goes to a device. */
+export const isSecretKey = (key) => key.startsWith('sb_secret_') || jwtRole(key) === 'service_role';
+
 function checkAnonKey(raw) {
   if (!raw) return { error: 'required' };
-  if (raw.startsWith('sb_secret_') || jwtRole(raw) === 'service_role') return { error: 'secret_key' };
+  if (isSecretKey(raw)) return { error: 'secret_key' };
   if (raw.length < MIN_KEY_CHARS || raw.length > MAX_FIELD_CHARS || !NO_SPACES.test(raw)) return { error: 'invalid' };
   return { value: raw };
 }

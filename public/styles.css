@@ -52,6 +52,26 @@ h3 { font-size: 11px; color: var(--muted); font-weight: 500; text-transform: upp
   border-bottom: 1px solid var(--line);
 }
 .brand { display: flex; align-items: baseline; gap: 10px; }
+.topbar-actions, .t-top-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.account-dialog {
+  width: min(420px, calc(100vw - 32px));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  padding: 20px;
+}
+.account-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+.account-dialog h2 { margin: 0 0 8px; }
+.account-dialog > * + * { margin-top: 12px; }
+.account-form { display: grid; gap: 8px; }
+.account-form label { font-size: 12px; color: var(--muted); }
+.account-form input { font: inherit; padding: 8px 10px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--panel-raised); color: var(--text); }
+.account-signed-in { display: grid; gap: 8px; }
+.account-signed-in p { margin: 0; overflow-wrap: anywhere; }
+.account-status { margin: 0; font-size: 13px; }
+.account-status[data-kind='error'] { color: var(--danger); }
+.account-status[data-kind='ok'] { color: var(--accent); }
 .version { color: var(--muted); font-size: 12px; }
 .session-state { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .clock { font-family: var(--font-data); color: var(--muted); font-variant-numeric: tabular-nums; }

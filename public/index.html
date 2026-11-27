@@ -18,8 +18,29 @@
         <span id="mode-label">Sin audio</span>
         <span class="clock" id="session-clock">00:00:00</span>
       </div>
-      <button type="button" class="btn" id="to-teacher">Vista docente</button>
+      <div class="topbar-actions">
+        <button type="button" class="btn" id="account-btn" aria-haspopup="dialog">Entrar</button>
+        <button type="button" class="btn" id="to-teacher">Vista docente</button>
+      </div>
     </header>
+
+    <!-- Account (odd/tasks/base-por-roles.md, T2): email-link sign-in and the role of who is signed in. -->
+    <dialog class="account-dialog" id="account-dialog" aria-labelledby="account-title">
+      <h2 id="account-title">Cuenta</h2>
+      <p class="hint">Con tu cuenta ves tus jornadas guardadas en el estudio y, según tu rol, Dirección o Analítica. Para medir no hace falta entrar.</p>
+      <form id="account-form" class="account-form">
+        <label for="account-email">Correo</label>
+        <input type="email" id="account-email" autocomplete="email" inputmode="email" required>
+        <button type="submit" class="btn primary">Enviarme el enlace</button>
+        <p class="hint">Te llega un enlace por correo; abrilo en este mismo equipo y navegador. No hay contraseña.</p>
+      </form>
+      <div id="account-signed-in" class="account-signed-in" hidden>
+        <p id="account-who"></p>
+        <button type="button" class="btn" id="account-sign-out">Cerrar sesión</button>
+      </div>
+      <p id="account-status" class="account-status" role="status" aria-live="polite" hidden></p>
+      <button type="button" class="btn" id="account-close">Cerrar</button>
+    </dialog>
 
     <!-- Teacher view (odd/tasks/vista-docente-movil.md): a guided phone flow over the same session. -->
     <div class="teacher" id="teacher-app" hidden>
@@ -28,7 +49,10 @@
           <p class="t-brand">VocalDose</p>
           <p class="t-sub" id="t-sub">Dosimetría vocal</p>
         </div>
-        <button type="button" class="t-link" id="to-technical">Vista técnica</button>
+        <div class="t-top-actions">
+          <button type="button" class="t-link" id="t-account-btn" aria-haspopup="dialog">Entrar</button>
+          <button type="button" class="t-link" id="to-technical">Vista técnica</button>
+        </div>
       </header>
       <p class="t-toast" id="t-toast" role="status" aria-live="polite" hidden></p>
 

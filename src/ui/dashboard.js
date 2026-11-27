@@ -30,6 +30,10 @@ import { createIndexedDbFrameStore, withFrameDeletion } from '../store/frame-sto
 import { createSyncPanel } from './sync-panel.js';
 import { createVoiceAssessmentPanel } from './voice-assessment-panel.js';
 import { createTeacherApp, initialView } from './teacher/teacher-app.js';
+import { createAccountPanel } from './account-panel.js';
+import { createAuthClient } from '../auth/supabase-auth.js';
+import { allowedBoards } from '../auth/access.js';
+import { APP_CONFIG } from '../app-config.js';
 
 const CATEGORY_LABELS = {
   fonacion_atribuida: 'Fonación atribuida',
@@ -278,12 +282,19 @@ const boards = createBoards({
 });
 
 const tabs = [
-  { button: $('tab-btn-live'), panel: $('tab-live') },
-  { button: $('tab-btn-score'), panel: $('tab-score') },
-  { button: $('tab-btn-teacher'), panel: $('tab-teacher'), board: 'teacher' },
-  { button: $('tab-btn-director'), panel: $('tab-director'), board: 'director' },
-  { button: $('tab-btn-analytics'), panel: $('tab-analytics'), board: 'analytics' },
+  { key: 'live', button: $('tab-btn-live'), panel: $('tab-live') },
+  { key: 'score', button: $('tab-btn-score'), panel: $('tab-score') },
+  { key: 'teacher', button: $('tab-btn-teacher'), panel: $('tab-teacher'), board: 'teacher' },
+  { key: 'director', button: $('tab-btn-director'), panel: $('tab-director'), board: 'director' },
+  { key: 'analytics', button: $('tab-btn-analytics'), panel: $('tab-analytics'), board: 'analytics' },
 ];
+/** Tabs the signed-in role may open (src/auth/access.js); signed out: measuring and Mi jornada. */
+let allowed = allowedBoards(null);
+function applyAccess(access) {
+  allowed = allowedBoards(access);
+  tabs.forEach(({ key, button }) => { button.hidden = !allowed.has(key); });
+  if (!allowed.has(tabs[currentTab].key)) selectTab(0);
+}
 let currentTab = 0;
 function selectTab(index) {
   currentTab = index;
@@ -426,7 +437,9 @@ tabs.forEach(({ button }, i) => {
   button.addEventListener('click', () => selectTab(i));
   button.addEventListener('keydown', (event) => {
     if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
-    const next = (i + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length;
+    const step = event.key === 'ArrowRight' ? 1 : tabs.length - 1;
+    let next = (i + step) % tabs.length;
+    while (!allowed.has(tabs[next].key)) next = (next + step) % tabs.length;
     selectTab(next);
     tabs[next].button.focus();
   });
@@ -890,6 +903,16 @@ teacher = createTeacherApp({
   getStartedAt: () => sessionStartedAt,
 });
 $('to-teacher').addEventListener('click', () => teacher.setView('teacher'));
+
+// ---------- account and role (odd/tasks/base-por-roles.md, T2) ----------
+applyAccess(null);
+const account = createAccountPanel({
+  auth: createAuthClient({ url: APP_CONFIG.supabaseUrl, anonKey: APP_CONFIG.supabaseAnonKey }),
+  $,
+  buttons: [$('account-btn'), $('t-account-btn')],
+  onAccess: applyAccess,
+});
+account.start().catch((error) => say(error.message, 'error'));
 teacher.setView(initialView());
 
 populateDevices().catch((error) => say(error.message, 'error'));
