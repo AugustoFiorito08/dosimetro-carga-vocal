@@ -297,7 +297,7 @@ begin
     raise exception 'workday % has not been received yet', key using errcode = 'PT425';
   end if;
   if row_school <> token_school then
-    raise exception 'the upload token cannot write frames of school %', row_school using errcode = 'PT403';
+    raise exception 'the upload token cannot write frames of this workday' using errcode = 'PT403';
   end if;
 
   insert into public.workday_frames as f (sync_key, part, parts, header, data)

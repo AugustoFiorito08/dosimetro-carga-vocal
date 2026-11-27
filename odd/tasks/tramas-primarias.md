@@ -21,7 +21,7 @@ Branch: `feat/tramas-primarias` (from `feat/vista-docente-movil`) · Delivery: a
 | T2 | S5 | inline | done (RED→GREEN, 5 tests) | 3475645 (amended) |
 | T3 | S2, S6 | inline | done (RED→GREEN, 4 tests + browser) | c4de02a |
 | T4 | S3, S7 | inline | done (RED→GREEN, 11 tests + browser with fake fetch) | 3bfb160 |
-| T5 | S2, S7 | inline | done (spec §14.1) | T5 commit |
+| T5 | S2, S7 | inline | done (spec §14.1) | c81d74c |
 
 - T1 Frame codec: encode/decode `vd-des-frames/1` (typed columns, gzip, base64 parts under 2 MB).
 - T2 Exact recomputation from decoded frames (engine replay; A_0 and q adjustable).
@@ -42,3 +42,4 @@ Route evidence: no writer trigger (units depend on T1 and share sync files), so 
 - **L7** (2026-11-27) T3 done: IndexedDB v3 store `frames`; frames saved after the workday, deleted with remove/clear (not with the sync purge). Browser: 424 frames, pause gap 2.99 s, own-voice A_0 kept; recomputed doses = stored within 1.4e-5. Not covered: autosaved checkpoints keep no frames (a recovered session has none). Next: T4.
 - **L8** (2026-11-27) T4 done: vd-des-frames-part/1 parts; transport sendFrames → upload_workday_frames; outbox item kind frames, after its workday, resumable from the failed part, purged after upload; SQL table workday_frames (FK cascade, RLS like workday_sync, PT425 while the workday is missing). Found in the browser: frames queued during the workday's run waited for the next poll; flush() now reruns once when called during a run. Browser (fake fetch, test values on localhost): upsert_workdays then upload_workday_frames (313 frames, 1 part, 532 chars), outbox and frames emptied. SQL not run against a real database. Next: T5.
 - **L9** (2026-11-27) T5 done: spec §14.1 states that the primary frames are sent, their fields, size, deletion, recomputation and the consent wording. Next: independent verification (Risk items 1, 2, 3).
+- **L10** (2026-11-27) Independent verifier: S1, S3-S7 pass; 585 tests pass. Blocker B1 (S2): the sync opt-in hint (index.html) and the teacher summary still said only the summary is sent. Fixed in one correction batch, with advisory 2 (the PT403 message no longer names the other school). Advisories left: integer casts raise 22P02/22003 instead of 22023 (out of domain); parts are re-gzipped on retry without a record hash; frames of a workday whose queuing failed retry PT425; unknown category stored as 0; the server does not validate the header beyond its schema.
