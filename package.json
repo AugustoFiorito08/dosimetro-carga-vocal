@@ -7,5 +7,8 @@
   "scripts": {
     "test": "node --test",
     "start": "python3 scripts/dev-server.py 8080"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.6.1"
   }
 }
