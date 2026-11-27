@@ -5,5 +5,5 @@ export const APP_CONFIG = Object.freeze({
   /** Supabase project of the study. */
   supabaseUrl: 'https://kokqkekchsbeztkpnctm.supabase.co',
   /** Its public key (Project Settings > API Keys: publishable or anon). Empty: sign-in disabled. */
-  supabaseAnonKey: '',
+  supabaseAnonKey: 'sb_publishable_OitLvfngVhGIYspCLwjOsg_x5FdIAxc',
 });
