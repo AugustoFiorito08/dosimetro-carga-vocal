@@ -25,9 +25,9 @@ export function createMemoryRepository(initial = []) {
 }
 
 export const DB_NAME = 'dosimetro-vocal';
-/** v1: workdays. v2: adds the sync outbox (src/store/outbox.js). */
-export const DB_VERSION = 2;
-export const STORES = Object.freeze({ workdays: 'workdays', outbox: 'outbox' });
+/** v1: workdays. v2: adds the sync outbox (src/store/outbox.js). v3: adds the primary frames (src/store/frame-store.js). */
+export const DB_VERSION = 3;
+export const STORES = Object.freeze({ workdays: 'workdays', outbox: 'outbox', frames: 'frames' });
 const STORE = STORES.workdays;
 
 /**
@@ -37,6 +37,7 @@ const STORE = STORES.workdays;
 export function upgradeDatabase(db, oldVersion) {
   if (oldVersion < 1 && !db.objectStoreNames.contains(STORES.workdays)) db.createObjectStore(STORES.workdays, { keyPath: 'id' });
   if (oldVersion < 2 && !db.objectStoreNames.contains(STORES.outbox)) db.createObjectStore(STORES.outbox, { keyPath: 'key' });
+  if (oldVersion < 3 && !db.objectStoreNames.contains(STORES.frames)) db.createObjectStore(STORES.frames, { keyPath: 'workdayId' });
 }
 
 /**

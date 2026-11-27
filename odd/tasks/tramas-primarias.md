@@ -18,8 +18,8 @@ Branch: `feat/tramas-primarias` (from `feat/vista-docente-movil`) · Delivery: a
 | ID | Specs | Route | Status | Commit |
 |---|---|---|---|---|
 | T1 | S4 | inline | done (RED→GREEN, 6 tests) | 7daf9ec |
-| T2 | S5 | inline | done (RED→GREEN, 5 tests) | T2 commit |
-| T3 | S2, S6 | inline | pending | |
+| T2 | S5 | inline | done (RED→GREEN, 5 tests) | 3475645 (amended) |
+| T3 | S2, S6 | inline | done (RED→GREEN, 4 tests + browser) | T3 commit |
 | T4 | S3, S7 | inline | pending | |
 | T5 | S2, S7 | inline | pending | |
 
@@ -39,3 +39,4 @@ Route evidence: no writer trigger (units depend on T1 and share sync files), so 
 - **L4** Analysis: ~23 frames/s (2048 samples at 48 kHz), ~675 000 frames per 8 h; 6 bytes per frame before gzip (~4 MB), sent as base64 parts. Next: T1.
 - **L5** (2026-11-27) T1 done: codec vd-des-frames/1; 6 bytes/frame; worst case 8 h (random values) 4.05 MB raw, 3.27 MB base64 in 3 parts. Next: T2.
 - **L6** (2026-11-27) T2 done: frame replay matches the engine within ~1e-6 relative with varied levels; the bound is the level rounding (0.005 dB steps, at most 5.8e-4 in I per frame), reached when few levels repeat (test data: 6e-5). Per-second series: ~1 % at β = 0.03. A_0 and q adjustable. Next: T3.
+- **L7** (2026-11-27) T3 done: IndexedDB v3 store `frames`; frames saved after the workday, deleted with remove/clear (not with the sync purge). Browser: 424 frames, pause gap 2.99 s, own-voice A_0 kept; recomputed doses = stored within 1.4e-5. Not covered: autosaved checkpoints keep no frames (a recovered session has none). Next: T4.
