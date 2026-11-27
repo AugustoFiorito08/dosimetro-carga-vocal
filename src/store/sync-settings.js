@@ -74,7 +74,7 @@ export function validateSyncSettings(input = {}) {
  * Version of the data consent shown before enabling the sync (sync panel, spec §14.1). Changing
  * what the app records or sends means a new version, and every device has to accept it again.
  */
-export const CONSENT_VERSION = 'vd-consent-datos-v1';
+export const CONSENT_VERSION = 'vd-consent-datos-v2';
 
 /** A consent of the current version with an ISO acceptance date, or null. */
 function currentConsent(consent) {
