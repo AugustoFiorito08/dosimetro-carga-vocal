@@ -3,7 +3,7 @@
 // enabled, it runs the sync service over the existing outbox with the Supabase transport.
 import { createSupabaseTransport } from '../store/supabase-transport.js';
 import { createSyncService } from '../store/sync-service.js';
-import { clearSyncSettings, loadSyncSettings, saveSyncSettings, validateSyncSettings } from '../store/sync-settings.js';
+import { CONSENT_VERSION, clearSyncSettings, loadSyncSettings, saveSyncSettings, validateSyncSettings } from '../store/sync-settings.js';
 
 const FIELDS = { url: 'sync-url', anonKey: 'sync-anon', uploadToken: 'sync-token' };
 const FIELD_ERRORS = {
@@ -66,6 +66,10 @@ export function createSyncPanel({ $, outbox, repository, onPurged, storage = glo
     $('sync-anon').value = settings?.anonKey ?? '';
     $('sync-token').value = settings?.uploadToken ?? '';
     $('sync-enabled').checked = settings?.enabled === true;
+    const accepted = settings?.consent?.acceptedAt;
+    $('sync-consent-status').textContent = accepted
+      ? `Consentimiento aceptado el ${new Date(accepted).toLocaleDateString('es-AR')} (${settings.consent.version}). Para retirarlo, destilde la casilla y guarde: el envío se detiene.`
+      : 'Si no lo acepta, sus datos quedan solo en este celular. Para retirar el consentimiento, destilde la casilla y guarde: el envío se detiene.';
   }
 
   function describeError(error) {
@@ -145,7 +149,10 @@ export function createSyncPanel({ $, outbox, repository, onPurged, storage = glo
     showFieldErrors(errors);
     if (!ok) return setStatus('No se guardó: revisá los campos marcados.', 'error');
     try {
-      settings = saveSyncSettings(storage, { ...input, enabled: $('sync-enabled').checked });
+      // Ticking the consent is what enables the sync; an accepted consent keeps its date.
+      const enabled = $('sync-enabled').checked;
+      const consent = enabled ? (settings?.consent ?? { version: CONSENT_VERSION, acceptedAt: new Date().toISOString() }) : null;
+      settings = saveSyncSettings(storage, { ...input, enabled, consent });
     } catch (error) {
       return setStatus(`No se pudo guardar en este navegador: ${error.message}`, 'error');
     }

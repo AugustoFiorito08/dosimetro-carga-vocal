@@ -5,6 +5,7 @@ import { createMemoryRepository } from '../src/store/workday-repository.js';
 import { createMemoryOutbox } from '../src/store/outbox.js';
 import { createSyncingRepository } from '../src/store/sync-service.js';
 import {
+  CONSENT_VERSION,
   SYNC_SETTINGS_KEY,
   clearSyncSettings,
   createOptInRepository,
@@ -83,8 +84,9 @@ describe('sync settings storage', () => {
   it('saves, loads and clears the settings under one key', () => {
     const storage = memoryStorage();
     assert.equal(loadSyncSettings(storage), null);
-    saveSyncSettings(storage, { enabled: true, url: URL_OK, anonKey: ANON_OK, uploadToken: TOKEN_OK });
-    assert.deepEqual(loadSyncSettings(storage), { enabled: true, url: URL_OK, anonKey: ANON_OK, uploadToken: TOKEN_OK });
+    const consent = { version: CONSENT_VERSION, acceptedAt: '2026-11-27T12:00:00.000Z' };
+    saveSyncSettings(storage, { enabled: true, consent, url: URL_OK, anonKey: ANON_OK, uploadToken: TOKEN_OK });
+    assert.deepEqual(loadSyncSettings(storage), { enabled: true, consent, url: URL_OK, anonKey: ANON_OK, uploadToken: TOKEN_OK });
     clearSyncSettings(storage);
     assert.equal(storage.data.has(SYNC_SETTINGS_KEY), false);
     assert.equal(loadSyncSettings(storage), null);
@@ -94,6 +96,23 @@ describe('sync settings storage', () => {
     assert.equal(loadSyncSettings(memoryStorage({ [SYNC_SETTINGS_KEY]: '{oops' })), null);
     const invalid = JSON.stringify({ enabled: true, url: 'http://example.com', anonKey: ANON_OK, uploadToken: TOKEN_OK });
     assert.equal(loadSyncSettings(memoryStorage({ [SYNC_SETTINGS_KEY]: invalid })), null);
+  });
+
+  it('the sync is enabled only with the current data consent accepted', () => {
+    const storage = memoryStorage();
+    const base = { url: URL_OK, anonKey: ANON_OK, uploadToken: TOKEN_OK };
+    assert.throws(() => saveSyncSettings(storage, { ...base, enabled: true }), /consent/);
+    assert.throws(() => saveSyncSettings(storage, { ...base, enabled: true, consent: { version: 'old', acceptedAt: '2026-11-27T12:00:00.000Z' } }), /consent/);
+    assert.throws(() => saveSyncSettings(storage, { ...base, enabled: true, consent: { version: CONSENT_VERSION, acceptedAt: 'yesterday' } }), /consent/);
+    // Withdrawing (enabled false) keeps no consent.
+    assert.deepEqual(saveSyncSettings(storage, { ...base, enabled: false, consent: { version: CONSENT_VERSION, acceptedAt: '2026-11-27T12:00:00.000Z' } }), { enabled: false, consent: null, ...base });
+  });
+
+  it('settings stored before the consent, or with an older one, load disabled', () => {
+    const before = JSON.stringify({ enabled: true, url: URL_OK, anonKey: ANON_OK, uploadToken: TOKEN_OK });
+    assert.deepEqual(loadSyncSettings(memoryStorage({ [SYNC_SETTINGS_KEY]: before })), { enabled: false, consent: null, url: URL_OK, anonKey: ANON_OK, uploadToken: TOKEN_OK });
+    const older = JSON.stringify({ enabled: true, consent: { version: 'vd-consent-datos-v0', acceptedAt: '2026-01-01T00:00:00.000Z' }, url: URL_OK, anonKey: ANON_OK, uploadToken: TOKEN_OK });
+    assert.equal(loadSyncSettings(memoryStorage({ [SYNC_SETTINGS_KEY]: older })).enabled, false);
   });
 
   it('survives unavailable storage', () => {

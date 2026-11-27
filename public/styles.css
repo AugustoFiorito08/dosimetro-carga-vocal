@@ -645,3 +645,11 @@ body[data-view='teacher'] .teacher .board-grid > section:nth-of-type(2) { displa
 body[data-view='teacher'] .teacher .board-grid { grid-template-columns: minmax(0, 1fr); }
 
 .borg { display: grid; gap: 4px; font-size: 12px; color: var(--muted); margin: 6px 0; }
+.sync-consent { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.sync-consent h3 { margin: 0; font-size: 14px; }
+.sync-consent-text { max-height: 280px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; line-height: 1.45; }
+.sync-consent-text h4 { margin: 10px 0 4px; font-size: 13px; }
+.sync-consent-text h4:first-child { margin-top: 0; }
+.sync-consent-text p, .sync-consent-text ul { margin: 0 0 6px; }
+.sync-consent-text ul { padding-left: 1.1rem; }
+.sync-consent-accept { align-items: flex-start; font-weight: 600; }

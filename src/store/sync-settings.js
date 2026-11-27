@@ -70,6 +70,19 @@ export function validateSyncSettings(input = {}) {
   return { ok, errors, value: ok ? { url: checks.url.value, anonKey: checks.anonKey.value, uploadToken: checks.uploadToken.value } : null };
 }
 
+/**
+ * Version of the data consent shown before enabling the sync (sync panel, spec §14.1). Changing
+ * what the app records or sends means a new version, and every device has to accept it again.
+ */
+export const CONSENT_VERSION = 'vd-consent-datos-v1';
+
+/** A consent of the current version with an ISO acceptance date, or null. */
+function currentConsent(consent) {
+  return consent?.version === CONSENT_VERSION && typeof consent.acceptedAt === 'string' && !Number.isNaN(Date.parse(consent.acceptedAt))
+    ? { version: consent.version, acceptedAt: consent.acceptedAt }
+    : null;
+}
+
 /** Stored settings, or null when absent, unreadable or invalid. */
 export function loadSyncSettings(storage = globalThis.localStorage) {
   let raw;
@@ -86,14 +99,23 @@ export function loadSyncSettings(storage = globalThis.localStorage) {
     return null;
   }
   const { ok, value } = validateSyncSettings(stored ?? {});
-  return ok ? { enabled: stored.enabled === true, ...value } : null;
+  if (!ok) return null;
+  // Enabled only with the current consent: settings saved before it (or under an older one) load disabled.
+  const consent = currentConsent(stored.consent);
+  return { enabled: stored.enabled === true && consent !== null, consent, ...value };
 }
 
-/** Validates and stores the settings; throws on invalid settings or unavailable storage. */
+/**
+ * Validates and stores the settings; throws on invalid settings, on enabling without the current
+ * consent, or on unavailable storage. Disabling withdraws the consent (stored as null).
+ */
 export function saveSyncSettings(storage, settings) {
   const { ok, value, errors } = validateSyncSettings(settings);
   if (!ok) throw new RangeError(`invalid sync settings: ${Object.keys(errors).join(', ')}`);
-  const stored = { enabled: settings.enabled === true, ...value };
+  const enabled = settings.enabled === true;
+  const consent = enabled ? currentConsent(settings.consent) : null;
+  if (enabled && consent === null) throw new RangeError(`enabling the sync needs the data consent ${CONSENT_VERSION}`);
+  const stored = { enabled, consent, ...value };
   storage.setItem(SYNC_SETTINGS_KEY, JSON.stringify(stored));
   return stored;
 }

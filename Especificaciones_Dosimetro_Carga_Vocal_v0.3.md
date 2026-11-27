@@ -692,6 +692,8 @@ La conservación de scores continuos permite recalcular decisiones con nuevos um
 
 El envío de resúmenes a una base de datos que alimente un tablero analítico es **optativo y está desactivado por defecto**. Se activa en cada equipo (*opt-in*), solo con consentimiento informado y con la aprobación ética del protocolo que lo prevea. Sin esa activación, nada sale del navegador.
 
+**Consentimiento en la app.** El panel de envío muestra la sección de datos del consentimiento: qué se mide, qué se registra, qué no se registra nunca, qué se envía, para qué se usa, conservación, acceso y retiro. La casilla «Leí esta sección y acepto…» es la que activa el envío: sin ella no se puede activar. Se guarda en el navegador, con la configuración, la versión aceptada (`vd-consent-datos-v1`, `CONSENT_VERSION` en `src/store/sync-settings.js`) y la fecha. Destildarla y guardar retira el consentimiento: el envío se detiene y la aceptación se borra. Una configuración guardada antes del consentimiento, o con una versión anterior, se carga desactivada hasta que se acepte la versión vigente. Cambiar lo que la app registra o envía exige una versión nueva del texto. El plazo de conservación y el contacto del estudio quedan por completar en el texto.
+
 **Qué se envía.** El resumen de la jornada (`vd-des-workday/1`) y, después de él, sus datos primarios por trama (`vd-des-frames/1`, ver abajo). El contrato del resumen es una lista cerrada de campos (`SYNC_FIELDS`, `src/store/workday-sync.js`):
 
 - identificación: `schema`, `id` y, si existen, `sessionUuid` y `deviceId`;
